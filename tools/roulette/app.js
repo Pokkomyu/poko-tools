@@ -11,21 +11,78 @@
   var STAGE_H = 1080;
   var WINNER_SHOW_MS = 5000;
   var TWO_PI = Math.PI * 2;
-  // 配色テーマ(カラー版)。wheel: 盤の6色(隣り合う項目が同じ色にならない順)、
-  // accent/deep: 見出し・START・影、star: 針と中心の飾り、bg: ブラウザで開いた時のプレビュー背景
-  var THEMES = [
-    { id: "poko",      name: "ぽこ",       wheel: ["#ff8fc7", "#ffffff", "#6cb8ff", "#ff6b6b", "#b98cff", "#ffe066"], accent: "#ff8fc7", deep: "#ff5fae", star: "#ffe066", bg: "#ffd0f5" },
-    { id: "pastel",    name: "パステル",   wheel: ["#ffd1dc", "#fff5ba", "#c9ecff", "#d4f8dc", "#e6d6ff", "#ffe0c7"], accent: "#ffd1dc", deep: "#f49ab5", star: "#fff5ba", bg: "#fff1f6" },
-    { id: "vivid",     name: "ビビッド",   wheel: ["#ff3d7f", "#ffd400", "#00c2ff", "#ff7a00", "#9b5cff", "#00e38c"], accent: "#ff3d7f", deep: "#c4005a", star: "#ffd400", bg: "#fff0f5" },
-    { id: "sakura",    name: "さくら",     wheel: ["#ffb7d5", "#fff4f8", "#ff8fb8", "#ffdce9", "#f7a1c4", "#ffffff"], accent: "#ffb7d5", deep: "#f06ea0", star: "#fff1a8", bg: "#fff0f5" },
-    { id: "umi",       name: "うみ",       wheel: ["#6cb8ff", "#e0f4ff", "#2f8be6", "#9fe3ff", "#4fd1c5", "#ffffff"], accent: "#6cb8ff", deep: "#2f8be6", star: "#ffe066", bg: "#dff1ff" },
-    { id: "yumekawa",  name: "ゆめかわ",   wheel: ["#ffb3ec", "#b3e0ff", "#d6b3ff", "#fff3b3", "#b3ffe6", "#ffffff"], accent: "#ffb3ec", deep: "#d67ad0", star: "#fff3b3", bg: "#f3e6ff" },
-    { id: "mono",      name: "モノトーン", wheel: ["#ffffff", "#d9d9d9", "#8c8c8c", "#f2f2f2", "#b3b3b3", "#666666"], accent: "#d9d9d9", deep: "#666666", star: "#ffffff", bg: "#eeeeee" },
-    { id: "halloween", name: "ハロウィン", wheel: ["#ff8c1a", "#ffe066", "#8e4dc9", "#2b2b2b", "#ffffff", "#ff6b6b"], accent: "#ff8c1a", deep: "#8e4dc9", star: "#ffe066", bg: "#f3e3d2" }
+  // ---------- 配色(カラー版) 定義 ----------
+  // 配信に映るパーツ。id は CSS 変数 --c-<id> にもなる(style.css)
+  var PART_GROUPS = [
+    { name: "ルーレット盤", parts: [
+      ["wheel-1", "盤の色 1"], ["wheel-2", "盤の色 2"], ["wheel-3", "盤の色 3"],
+      ["wheel-4", "盤の色 4"], ["wheel-5", "盤の色 5"], ["wheel-6", "盤の色 6"],
+      ["wheel-text", "名前の文字"], ["wheel-text-outline", "名前のふち"],
+      ["wheel-line", "枠線・仕切り"], ["wheel-center", "中心の飾り"]] },
+    { name: "針", parts: [["pointer", "針"], ["pointer-line", "針の枠"]] },
+    { name: "当選表示", parts: [
+      ["winner-label-bg", "「おめでとう!」の背景"], ["winner-name-bg", "名前の背景"],
+      ["winner-text", "文字"], ["winner-border", "枠"], ["winner-shadow", "影"]] },
+    { name: "当たった人の一覧", parts: [
+      ["list-title-bg", "見出しの背景"], ["list-title-text", "見出しの文字"], ["list-bg", "背景"],
+      ["list-text", "文字"], ["list-number", "番号"], ["list-border", "枠"]] },
+    { name: "回数表示", parts: [["count-bg", "背景"], ["count-text", "文字"], ["count-border", "枠"]] },
+    { name: "背景", parts: [["preview-bg", "ブラウザで開いた時の背景(OBSでは透明)"]] }
   ];
-  var theme = THEMES[0];
-  var COLORS = theme.wheel;
-  var INK = "#3b2b45";
+  var PART_IDS = [];
+  var PART_NAME = {};
+  PART_GROUPS.forEach(function (g) {
+    g.parts.forEach(function (p) { PART_IDS.push(p[0]); PART_NAME[p[0]] = p[1] === g.name ? p[1] : g.name + " / " + p[1]; });
+  });
+
+  // プリセットは少ない指定(盤6色・線の色・星・紙・アクセント・濃いアクセント・背景)から全パーツを組み立てる
+  function makePreset(id, name, d) {
+    var c = {};
+    for (var i = 0; i < 6; i++) c["wheel-" + (i + 1)] = d.wheel[i];
+    c["wheel-text"] = d.text || d.ink;
+    c["wheel-text-outline"] = d.outline || "#ffffff";
+    c["wheel-line"] = d.ink;
+    c["wheel-center"] = d.star;
+    c["pointer"] = d.star;
+    c["pointer-line"] = d.ink;
+    c["winner-label-bg"] = d.star;
+    c["winner-name-bg"] = d.paper;
+    c["winner-text"] = d.ink;
+    c["winner-border"] = d.ink;
+    c["winner-shadow"] = d.deep;
+    c["list-title-bg"] = d.accent;
+    c["list-title-text"] = d.titleText || d.ink;
+    c["list-bg"] = d.paper;
+    c["list-text"] = d.ink;
+    c["list-number"] = d.deep;
+    c["list-border"] = d.ink;
+    c["count-bg"] = d.paper;
+    c["count-text"] = d.ink;
+    c["count-border"] = d.ink;
+    c["preview-bg"] = d.bg;
+    return { id: id, name: name, colors: c };
+  }
+  var PRESETS = [
+    makePreset("poko", "ぽこ", { wheel: ["#ff8fc7", "#ffffff", "#6cb8ff", "#ff6b6b", "#b98cff", "#ffe066"],
+      ink: "#3b2b45", star: "#ffe066", paper: "#ffffff", accent: "#ff8fc7", deep: "#ff5fae", bg: "#ffd0f5" }),
+    makePreset("pastel", "パステル", { wheel: ["#ffd1dc", "#fff5ba", "#c9ecff", "#d4f8dc", "#e6d6ff", "#ffe0c7"],
+      ink: "#7b6b8f", star: "#fff5ba", paper: "#fffdf7", accent: "#ffd1dc", deep: "#f49ab5", bg: "#fdf3ff" }),
+    makePreset("vivid", "ビビッド", { wheel: ["#ff3d7f", "#ffd400", "#00c2ff", "#ff7a00", "#9b5cff", "#00e38c"],
+      ink: "#141a3a", text: "#ffffff", outline: "#141a3a", star: "#ffd400", paper: "#ffffff", accent: "#ff3d7f", titleText: "#ffffff", deep: "#c4005a", bg: "#1e2250" }),
+    makePreset("sakura", "さくら", { wheel: ["#ffb7d5", "#fff4f8", "#ff8fb8", "#ffdce9", "#f7a1c4", "#ffffff"],
+      ink: "#8a3a5c", star: "#fff1a8", paper: "#fff6fa", accent: "#ffb7d5", deep: "#e8699b", bg: "#ffe4ee" }),
+    makePreset("umi", "うみ", { wheel: ["#6cb8ff", "#e0f4ff", "#2f8be6", "#9fe3ff", "#4fd1c5", "#ffffff"],
+      ink: "#163a63", star: "#ffe066", paper: "#f2fbff", accent: "#6cb8ff", deep: "#2f8be6", bg: "#bfe3ff" }),
+    makePreset("yumekawa", "ゆめかわ", { wheel: ["#ffb3ec", "#b3e0ff", "#d6b3ff", "#fff3b3", "#b3ffe6", "#ffffff"],
+      ink: "#7a4fa3", star: "#fff3b3", paper: "#fffafc", accent: "#ffb3ec", deep: "#c77dd6", bg: "#e9d8ff" }),
+    makePreset("mono", "モノトーン", { wheel: ["#ffffff", "#d9d9d9", "#8c8c8c", "#f2f2f2", "#b3b3b3", "#666666"],
+      ink: "#1a1a1a", star: "#ffffff", paper: "#ffffff", accent: "#cfcfcf", deep: "#555555", bg: "#dcdcdc" }),
+    makePreset("halloween", "ハロウィン", { wheel: ["#ff8c1a", "#ffe066", "#8e4dc9", "#2b2b2b", "#ffffff", "#ff6b6b"],
+      ink: "#1b0f2b", text: "#ffffff", outline: "#1b0f2b", star: "#ffe066", paper: "#fff3e0", accent: "#ff8c1a", deep: "#8e4dc9", bg: "#2b1a3d" })
+  ];
+  var MAX_CUSTOM = 5;        // 保存できる配色の数
+  var colors = PRESETS[0].colors; // 今の配色(applyTheme で差し替える)
+  var COLORS = PRESETS[0].colors; // 盤の6色は colors["wheel-N"] を使う(drawWheel 用に配列化する)
   var FONT = '"M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Meiryo", system-ui, sans-serif';
   var MAX_NAME_LENGTH = 40;
   // 針のプルプル: 項目の境目が針を通るたびに弾かれ、すぐ減衰する
@@ -53,7 +110,8 @@
     winners: [],   // {n, name}
     spinCount: 0,
     lastWinnerId: null,
-    theme: THEMES[0].id,
+    theme: PRESETS[0].id,
+    customThemes: [], // {id, name, colors} 最大 MAX_CUSTOM 件
     options: { removeOnWin: false, noRepeat: false, showCount: false, sound: true, fanfare: true, congrats: true }
   };
 
@@ -72,6 +130,15 @@
       state.winners = Array.isArray(saved.winners) ? saved.winners : [];
       state.spinCount = saved.spinCount | 0;
       state.lastWinnerId = saved.lastWinnerId || null;
+      if (Array.isArray(saved.customThemes)) {
+        state.customThemes = saved.customThemes.filter(function (t) {
+          return t && typeof t.id === "string" && t.id.indexOf("custom-") === 0 && t.colors;
+        }).slice(0, MAX_CUSTOM).map(function (t) {
+          var c = {};
+          PART_IDS.forEach(function (id) { c[id] = isHex(t.colors[id]) ? normHex(t.colors[id]) : PRESETS[0].colors[id]; });
+          return { id: t.id, name: String(t.name || "新規配色").slice(0, 12), colors: c };
+        });
+      }
       if (findTheme(saved.theme)) state.theme = saved.theme;
       for (var k in state.options) {
         if (saved.options && typeof saved.options[k] === "boolean") state.options[k] = saved.options[k];
@@ -128,7 +195,20 @@
     startBtn: $("startBtn"),
     resetBtn: $("resetBtn"),
     version: $("version"),
-    themeList: $("themeList"),
+    tabs: { names: $("tabNames"), colors: $("tabColors") },
+    panels: { names: $("panelNames"), colors: $("panelColors") },
+    presetList: $("presetList"),
+    customList: $("customList"),
+    themeHint: $("themeHint"),
+    partList: $("partList"),
+    pickerSwatch: $("pickerSwatch"),
+    pickerPart: $("pickerPart"),
+    themeName: $("themeName"),
+    swatchGrid: $("swatchGrid"),
+    svCanvas: $("svCanvas"),
+    hueCanvas: $("hueCanvas"),
+    rgb: [$("rgbR"), $("rgbG"), $("rgbB")],
+    hexInput: $("hexInput"),
     opt: {
       removeOnWin: $("optRemoveOnWin"),
       noRepeat: $("optNoRepeat"),
@@ -165,56 +245,391 @@
     drawWheel();
   }
 
-  // ---------- theme (カラー版) ----------
+  // ---------- 色ユーティリティ ----------
+
+  function isHex(v) { return typeof v === "string" && /^#?[0-9a-fA-F]{6}$/.test(v); }
+  function normHex(v) { return "#" + v.replace("#", "").toLowerCase(); }
+  function hexToRgb(h) {
+    h = h.replace("#", "");
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function rgbToHex(r, g, b) {
+    return "#" + [r, g, b].map(function (v) {
+      v = Math.max(0, Math.min(255, Math.round(v)));
+      return (v < 16 ? "0" : "") + v.toString(16);
+    }).join("");
+  }
+  function mixHex(a, b, t) {
+    var x = hexToRgb(a), y = hexToRgb(b);
+    return rgbToHex(x[0] + (y[0] - x[0]) * t, x[1] + (y[1] - x[1]) * t, x[2] + (y[2] - x[2]) * t);
+  }
+  function rgbaOf(hex, alpha) {
+    var c = hexToRgb(hex);
+    return "rgba(" + c[0] + ", " + c[1] + ", " + c[2] + ", " + alpha + ")";
+  }
+  // h: 0-360, s/v: 0-1
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, h = 0;
+    if (d > 0) {
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return { h: h, s: max === 0 ? 0 : d / max, v: max };
+  }
+  function hsvToRgb(h, s, v) {
+    var c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c, r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; } else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; } else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+  }
+  function hsvToHex(h, s, v) { var c = hsvToRgb(h, s, v); return rgbToHex(c[0], c[1], c[2]); }
+
+  // ---------- 配色(カラー版) ----------
 
   function findTheme(id) {
-    for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i];
+    var i;
+    for (i = 0; i < PRESETS.length; i++) if (PRESETS[i].id === id) return PRESETS[i];
+    for (i = 0; i < state.customThemes.length; i++) if (state.customThemes[i].id === id) return state.customThemes[i];
     return null;
   }
+  function activeTheme() { return findTheme(state.theme) || PRESETS[0]; }
+  function isCustom(t) { return t.id.indexOf("custom-") === 0; }
 
-  // 盤の色は canvas で描くので COLORS を差し替え、それ以外(見出し・ボタン・影・針)は CSS 変数で切り替える
+  // 盤の色は canvas で描くので配列に取り出し、それ以外は CSS 変数 --c-<part> で切り替える
   function applyTheme() {
-    theme = findTheme(state.theme) || THEMES[0];
-    COLORS = theme.wheel;
+    colors = activeTheme().colors;
+    COLORS = PART_IDS.slice(0, 6).map(function (id) { return colors[id]; });
     var root = document.documentElement.style;
-    root.setProperty("--poko-pink", theme.accent);
-    root.setProperty("--poko-pink-deep", theme.deep);
-    root.setProperty("--poko-yellow", theme.star);
-    root.setProperty("--poko-preview-bg", theme.bg);
+    PART_IDS.forEach(function (id) { root.setProperty("--c-" + id, colors[id]); });
+    root.setProperty("--c-pointer-shine", mixHex(colors["pointer"], "#ffffff", 0.65));
+    root.setProperty("--c-list-rule", rgbaOf(colors["list-text"], 0.25));
   }
 
-  function setTheme(id) {
+  function selectTheme(id) {
     if (!findTheme(id)) return;
     state.theme = id;
+    applyTheme();
+    setHint("");
+    save();
+    render();
+  }
+
+  function newCustomName() {
+    for (var n = 1; ; n++) {
+      var name = "新規配色" + n;
+      if (!state.customThemes.some(function (t) { return t.name === name; })) return name;
+    }
+  }
+
+  // プリセットを編集した時に、そのコピーを「新規配色N」として保存して選択する。枠が無ければ null
+  function forkToCustom() {
+    if (state.customThemes.length >= MAX_CUSTOM) return null;
+    var src = activeTheme();
+    var c = {};
+    PART_IDS.forEach(function (id) { c[id] = src.colors[id]; });
+    var t = { id: "custom-" + Date.now().toString(36), name: newCustomName(), colors: c };
+    state.customThemes.push(t);
+    state.theme = t.id;
+    return t;
+  }
+
+  function setPartColor(part, hex) {
+    if (!isHex(hex)) return;
+    hex = normHex(hex);
+    var t = activeTheme();
+    if (t.colors[part] === hex) return;
+    if (!isCustom(t)) {
+      t = forkToCustom();
+      if (!t) {
+        setHint("保存できる配色は" + MAX_CUSTOM + "つまでです。「保存した配色」の × でいらないものを消してね", true);
+        return;
+      }
+      setHint("「" + t.name + "」として保存しました。名前は右上の欄で変えられます");
+    }
+    t.colors[part] = hex;
     applyTheme();
     save();
     render();
   }
 
-  // 配色の選択肢(起動時に一度だけ作る)。色は実際の盤の6色を並べて見せる
-  function buildThemePicker() {
-    el.themeList.textContent = "";
-    THEMES.forEach(function (t) {
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "theme";
-      btn.dataset.id = t.id;
-      btn.title = t.name;
-      var sw = document.createElement("span");
-      sw.className = "theme-swatches";
-      t.wheel.forEach(function (c) {
-        var i = document.createElement("i");
-        i.style.background = c;
-        sw.appendChild(i);
+  function deleteCustom(id) {
+    state.customThemes = state.customThemes.filter(function (t) { return t.id !== id; });
+    if (state.theme === id) state.theme = PRESETS[0].id;
+    applyTheme();
+    setHint("");
+    save();
+    render();
+  }
+
+  function renameCustom(name) {
+    var t = activeTheme();
+    if (!isCustom(t)) return;
+    name = name.trim().slice(0, 12);
+    if (name) t.name = name;
+    save();
+    renderThemeLists();
+  }
+
+  function setHint(text, warn) {
+    el.themeHint.textContent = text;
+    el.themeHint.classList.toggle("warn", !!warn);
+  }
+
+  // ---------- 配色の UI ----------
+
+  var picker = { part: "wheel-1", h: 330, s: 0.44, v: 1 }; // 編集中のパーツと、パレットの位置
+  var currentTab = "names";
+
+  function showTab(name) {
+    currentTab = name;
+    for (var k in el.tabs) {
+      el.tabs[k].classList.toggle("active", k === name);
+      el.tabs[k].setAttribute("aria-selected", k === name ? "true" : "false");
+      el.panels[k].hidden = k !== name;
+    }
+  }
+
+  function themeChip(t, deletable) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "theme";
+    btn.dataset.id = t.id;
+    btn.title = t.name;
+    var sw = document.createElement("span");
+    sw.className = "theme-swatches";
+    for (var i = 1; i <= 6; i++) {
+      var s = document.createElement("i");
+      s.style.background = t.colors["wheel-" + i];
+      sw.appendChild(s);
+    }
+    var name = document.createElement("span");
+    name.className = "theme-name";
+    name.textContent = t.name;
+    btn.appendChild(sw);
+    btn.appendChild(name);
+    btn.addEventListener("click", function () { selectTheme(t.id); });
+    if (deletable) {
+      var del = document.createElement("span");
+      del.className = "del";
+      del.setAttribute("role", "button");
+      del.title = t.name + " を削除";
+      del.textContent = "×";
+      del.addEventListener("click", function (ev) { ev.stopPropagation(); deleteCustom(t.id); });
+      btn.appendChild(del);
+    }
+    return btn;
+  }
+
+  // 代表色: 左列がグレー、残りは色相ごとに薄い→濃い
+  var SWATCH_HUES = [0, 30, 55, 120, 175, 210, 260, 300, 335];
+  var SWATCH_GRAYS = ["#ffffff", "#d9d9d9", "#a6a6a6", "#737373", "#404040", "#000000"];
+  function swatchColors() {
+    var rows = [];
+    for (var r = 0; r < 6; r++) {
+      var row = [SWATCH_GRAYS[r]];
+      SWATCH_HUES.forEach(function (h) {
+        var sv = [[0.25, 1], [0.5, 1], [0.85, 1], [1, 0.85], [1, 0.6], [1, 0.4]][r];
+        row.push(hsvToHex(h, sv[0], sv[1]));
       });
-      var name = document.createElement("span");
-      name.className = "theme-name";
-      name.textContent = t.name;
-      btn.appendChild(sw);
-      btn.appendChild(name);
-      btn.addEventListener("click", function () { setTheme(t.id); });
-      el.themeList.appendChild(btn);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function buildThemeUI() {
+    el.presetList.textContent = "";
+    PRESETS.forEach(function (t) { el.presetList.appendChild(themeChip(t, false)); });
+
+    el.partList.textContent = "";
+    PART_GROUPS.forEach(function (g) {
+      var head = document.createElement("li");
+      head.className = "group";
+      head.textContent = g.name;
+      el.partList.appendChild(head);
+      g.parts.forEach(function (p) {
+        var li = document.createElement("li");
+        li.className = "part";
+        li.dataset.id = p[0];
+        var sw = document.createElement("span");
+        sw.className = "swatch";
+        var label = document.createElement("span");
+        label.className = "label";
+        label.textContent = p[1];
+        label.title = p[1];
+        li.appendChild(sw);
+        li.appendChild(label);
+        li.addEventListener("click", function () { selectPart(p[0]); });
+        el.partList.appendChild(li);
+      });
     });
+
+    el.swatchGrid.textContent = "";
+    swatchColors().forEach(function (row) {
+      row.forEach(function (hex) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.dataset.hex = hex;
+        b.title = hex;
+        b.style.background = hex;
+        b.addEventListener("click", function () { setPartColor(picker.part, hex); });
+        el.swatchGrid.appendChild(b);
+      });
+    });
+
+    bindCanvasDrag(el.svCanvas, function (x, y) {
+      picker.s = x;
+      picker.v = 1 - y;
+      setPartColor(picker.part, hsvToHex(picker.h, picker.s, picker.v));
+      drawPicker();
+    });
+    bindCanvasDrag(el.hueCanvas, function (x) {
+      picker.h = Math.min(359.9, x * 360);
+      // 無彩色のままだと色相を変えても見た目が変わらないので、少し色を付ける
+      if (picker.s === 0) picker.s = 1;
+      if (picker.v === 0) picker.v = 1;
+      setPartColor(picker.part, hsvToHex(picker.h, picker.s, picker.v));
+      drawPicker();
+    });
+
+    el.rgb.forEach(function (input) {
+      input.addEventListener("change", function () {
+        var v = el.rgb.map(function (i) { return Math.max(0, Math.min(255, parseInt(i.value, 10) || 0)); });
+        setPartColor(picker.part, rgbToHex(v[0], v[1], v[2]));
+        renderPicker(); // 範囲外の入力を正規化して表示し直す
+      });
+    });
+    el.hexInput.addEventListener("change", function () {
+      if (isHex(el.hexInput.value)) setPartColor(picker.part, el.hexInput.value);
+      renderPicker();
+    });
+    el.hexInput.addEventListener("keydown", function (ev) { if (ev.key === "Enter") el.hexInput.blur(); });
+    el.themeName.addEventListener("change", function () { renameCustom(el.themeName.value); });
+    el.themeName.addEventListener("keydown", function (ev) { if (ev.key === "Enter") el.themeName.blur(); });
+
+    Object.keys(el.tabs).forEach(function (k) {
+      el.tabs[k].addEventListener("click", function () { showTab(k); });
+    });
+  }
+
+  // canvas 上のドラッグを 0〜1 の座標で渡す(ステージは拡大縮小されるので表示サイズで割る)
+  function bindCanvasDrag(canvas, onPoint) {
+    var dragging = false;
+    function point(ev) {
+      var r = canvas.getBoundingClientRect();
+      onPoint(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+              Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)));
+    }
+    canvas.addEventListener("pointerdown", function (ev) {
+      dragging = true;
+      canvas.setPointerCapture(ev.pointerId);
+      point(ev);
+      ev.preventDefault();
+    });
+    canvas.addEventListener("pointermove", function (ev) { if (dragging) point(ev); });
+    function stop() { dragging = false; }
+    canvas.addEventListener("pointerup", stop);
+    canvas.addEventListener("pointercancel", stop);
+  }
+
+  function selectPart(id) {
+    picker.part = id;
+    syncPickerToColor();
+    renderPicker();
+    renderPartList();
+  }
+
+  // 今のパーツの色からパレットの位置を決める。灰色の時は色相を保つ(動かしても意味が無いため)
+  function syncPickerToColor() {
+    var c = hexToRgb(colors[picker.part]);
+    var hsv = rgbToHsv(c[0], c[1], c[2]);
+    if (hsv.s > 0) picker.h = hsv.h;
+    picker.s = hsv.s;
+    picker.v = hsv.v;
+  }
+
+  function drawPicker() {
+    var cv = el.svCanvas, g = cv.getContext("2d"), w = cv.width, h = cv.height;
+    g.fillStyle = hsvToHex(picker.h, 1, 1);
+    g.fillRect(0, 0, w, h);
+    var gx = g.createLinearGradient(0, 0, w, 0);
+    gx.addColorStop(0, "rgba(255,255,255,1)");
+    gx.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gx;
+    g.fillRect(0, 0, w, h);
+    var gy = g.createLinearGradient(0, 0, 0, h);
+    gy.addColorStop(0, "rgba(0,0,0,0)");
+    gy.addColorStop(1, "rgba(0,0,0,1)");
+    g.fillStyle = gy;
+    g.fillRect(0, 0, w, h);
+    var x = picker.s * w, y = (1 - picker.v) * h;
+    g.beginPath();
+    g.arc(x, y, 6, 0, TWO_PI);
+    g.lineWidth = 3; g.strokeStyle = "#ffffff"; g.stroke();
+    g.lineWidth = 1; g.strokeStyle = "#000000"; g.stroke();
+
+    var hc = el.hueCanvas, hg = hc.getContext("2d"), hw = hc.width, hh = hc.height;
+    var grad = hg.createLinearGradient(0, 0, hw, 0);
+    for (var i = 0; i <= 6; i++) grad.addColorStop(i / 6, hsvToHex(i * 60 % 360, 1, 1));
+    hg.fillStyle = grad;
+    hg.fillRect(0, 0, hw, hh);
+    var hx = picker.h / 360 * hw;
+    hg.fillStyle = "#ffffff";
+    hg.fillRect(hx - 3, 0, 6, hh);
+    hg.fillStyle = "#000000";
+    hg.fillRect(hx - 1, 0, 2, hh);
+  }
+
+  function renderPicker() {
+    var hex = colors[picker.part];
+    el.pickerSwatch.style.background = hex;
+    el.pickerPart.textContent = PART_NAME[picker.part];
+    var c = hexToRgb(hex);
+    if (document.activeElement !== el.rgb[0] && document.activeElement !== el.rgb[1] && document.activeElement !== el.rgb[2]) {
+      el.rgb.forEach(function (input, i) { input.value = c[i]; });
+    }
+    if (document.activeElement !== el.hexInput) el.hexInput.value = hex;
+    Array.prototype.forEach.call(el.swatchGrid.children, function (b) { b.classList.toggle("active", b.dataset.hex === hex); });
+    drawPicker();
+  }
+
+  function renderPartList() {
+    Array.prototype.forEach.call(el.partList.children, function (li) {
+      if (!li.dataset.id) return;
+      li.classList.toggle("active", li.dataset.id === picker.part);
+      li.firstChild.style.background = colors[li.dataset.id];
+    });
+  }
+
+  function renderThemeLists() {
+    var t = activeTheme();
+    Array.prototype.forEach.call(el.presetList.children, function (btn) {
+      btn.classList.toggle("active", btn.dataset.id === state.theme);
+    });
+    el.customList.textContent = "";
+    if (state.customThemes.length === 0) {
+      var empty = document.createElement("span");
+      empty.className = "empty";
+      empty.textContent = "プリセットの色を変えると、ここに自動で保存されます(" + MAX_CUSTOM + "つまで)";
+      el.customList.appendChild(empty);
+    }
+    state.customThemes.forEach(function (c) {
+      var chip = themeChip(c, true);
+      chip.classList.toggle("active", c.id === state.theme);
+      el.customList.appendChild(chip);
+    });
+    el.themeName.hidden = !isCustom(t);
+    if (document.activeElement !== el.themeName) el.themeName.value = isCustom(t) ? t.name : "";
+  }
+
+  function renderThemeUI() {
+    renderThemeLists();
+    renderPartList();
+    syncPickerToColor();
+    renderPicker();
   }
 
   // ---------- wheel ----------
@@ -254,9 +669,9 @@
     if (n === 0) {
       ctx.beginPath();
       ctx.arc(c, c, r, 0, TWO_PI);
-      ctx.fillStyle = "#f3eaf2";
+      ctx.fillStyle = mixHex(colors["wheel-line"], "#ffffff", 0.9);
       ctx.fill();
-      ctx.fillStyle = INK;
+      ctx.fillStyle = colors["wheel-line"];
       ctx.font = "800 " + 36 * k + "px " + FONT;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -274,7 +689,7 @@
         ctx.fill();
         if (n > 1) {
           ctx.lineWidth = 2 * k;
-          ctx.strokeStyle = INK;
+          ctx.strokeStyle = colors["wheel-line"];
           ctx.stroke();
         }
       }
@@ -296,9 +711,9 @@
         var x = n === 1 ? ctx.measureText(label).width / 2 : r * 0.9;
         var y = n === 1 ? -r * OFF_CENTER_Y : 0;
         ctx.lineWidth = fontSize * 0.28;
-        ctx.strokeStyle = "#ffffff";
+        ctx.strokeStyle = colors["wheel-text-outline"];
         ctx.strokeText(label, x, y);
-        ctx.fillStyle = INK;
+        ctx.fillStyle = colors["wheel-text"];
         ctx.fillText(label, x, y);
         ctx.restore();
       }
@@ -308,12 +723,12 @@
     ctx.beginPath();
     ctx.arc(c, c, r, 0, TWO_PI);
     ctx.lineWidth = 16 * k;
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = colors["wheel-line"];
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(c, c, 26 * k, 0, TWO_PI);
-    ctx.fillStyle = theme.star;
+    ctx.fillStyle = colors["wheel-center"];
     ctx.fill();
     ctx.lineWidth = 6 * k;
     ctx.stroke();
@@ -668,10 +1083,7 @@
     el.spinCount.textContent = state.spinCount + "回目";
 
     for (var k in el.opt) el.opt[k].checked = state.options[k];
-    Array.prototype.forEach.call(el.themeList.children, function (btn) {
-      btn.classList.toggle("active", btn.dataset.id === state.theme);
-      btn.setAttribute("aria-pressed", btn.dataset.id === state.theme ? "true" : "false");
-    });
+    renderThemeUI();
     el.winnerLabel.hidden = !state.options.congrats; // 当選表示中の切替にもすぐ反映
 
     el.startBtn.disabled = spinning || n === 0;
@@ -709,7 +1121,8 @@
   el.version.textContent = "ぽこルーレット " + EDITION + " v" + VERSION;
   load();
   applyTheme();
-  buildThemePicker();
+  buildThemeUI();
+  showTab("names");
   render();
   fitStage();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawWheel);
@@ -717,8 +1130,13 @@
   // 検証用フック(動作には影響しない)
   window.__pokoRoulette = {
     state: state,
-    themes: THEMES,
-    setTheme: setTheme,
+    presets: PRESETS,
+    partIds: PART_IDS,
+    colors: function () { return colors; },
+    selectTheme: selectTheme,
+    setPartColor: setPartColor,
+    deleteCustom: deleteCustom,
+    showTab: showTab,
     indexAtPointer: function () { return indexAtPointer(state.entries.length); },
     isSpinning: function () { return spinning; }
   };

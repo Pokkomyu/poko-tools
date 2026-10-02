@@ -32,36 +32,68 @@
   <section class="control" aria-label="操作パネル">
     <header class="control-head">
       <span>操作パネル</span>
+      <nav class="tabs" role="tablist" aria-label="操作パネルのタブ">
+        <button id="tabNames" class="tab active" type="button" role="tab" data-tab="names" aria-selected="true">名前</button>
+        <button id="tabColors" class="tab" type="button" role="tab" data-tab="colors" aria-selected="false">配色</button>
+      </nav>
       <span class="control-note">OBSではクロップで隠してね</span>
     </header>
 
-    <div class="control-body">
-      <div class="entries">
-        <div class="entries-head">
-          <span>名前 <b id="entryCount">0</b>人</span>
-          <button id="clearEntries" class="btn-small" type="button">全消去</button>
+    <div id="panelNames" class="tab-panel" data-tab="names">
+      <div class="control-body">
+        <div class="entries">
+          <div class="entries-head">
+            <span>名前 <b id="entryCount">0</b>人</span>
+            <button id="clearEntries" class="btn-small" type="button">全消去</button>
+          </div>
+          <ol id="entryList" class="entry-list"></ol>
         </div>
-        <ol id="entryList" class="entry-list"></ol>
+
+        <div class="options">
+          <label><input type="checkbox" id="optRemoveOnWin"> 当たったら消す</label>
+          <label><input type="checkbox" id="optNoRepeat"> 連続で同じ人に当たらない</label>
+          <label><input type="checkbox" id="optShowCount"> 何回回したかを表示</label>
+          <label><input type="checkbox" id="optSound"> 効果音</label>
+          <label><input type="checkbox" id="optFanfare"> 当選時のファンファーレ</label>
+          <label><input type="checkbox" id="optCongrats"> 当選時の「おめでとう!」</label>
+        </div>
       </div>
 
-      <div class="options">
-        <label><input type="checkbox" id="optRemoveOnWin"> 当たったら消す</label>
-        <label><input type="checkbox" id="optNoRepeat"> 連続で同じ人に当たらない</label>
-        <label><input type="checkbox" id="optShowCount"> 何回回したかを表示</label>
-        <label><input type="checkbox" id="optSound"> 効果音</label>
-        <label><input type="checkbox" id="optFanfare"> 当選時のファンファーレ</label>
-        <label><input type="checkbox" id="optCongrats"> 当選時の「おめでとう!」</label>
+      <div class="add">
+        <textarea id="addInput" rows="3" placeholder="名前を入力(改行区切りでまとめて貼り付けOK)"></textarea>
+        <button id="addBtn" class="btn btn-add" type="button">追加</button>
       </div>
     </div>
 
-    <div class="themes">
-      <div class="themes-head">配色</div>
-      <div id="themeList" class="theme-list" role="group" aria-label="配色"></div>
-    </div>
-
-    <div class="add">
-      <textarea id="addInput" rows="3" placeholder="名前を入力(改行区切りでまとめて貼り付けOK)"></textarea>
-      <button id="addBtn" class="btn btn-add" type="button">追加</button>
+    <div id="panelColors" class="tab-panel" data-tab="colors" hidden>
+      <div class="theme-row">
+        <span class="theme-row-head">プリセット</span>
+        <div id="presetList" class="theme-list"></div>
+      </div>
+      <div class="theme-row">
+        <span class="theme-row-head">保存した配色</span>
+        <div id="customList" class="theme-list"></div>
+      </div>
+      <p id="themeHint" class="theme-hint"></p>
+      <div class="theme-editor">
+        <ol id="partList" class="part-list" aria-label="パーツ"></ol>
+        <div class="picker">
+          <div class="picker-head">
+            <span id="pickerSwatch" class="picker-swatch"></span>
+            <span id="pickerPart" class="picker-part"></span>
+            <input id="themeName" class="theme-name-input" type="text" maxlength="12" placeholder="配色の名前" title="保存した配色の名前" hidden>
+          </div>
+          <div id="swatchGrid" class="swatch-grid" aria-label="代表色"></div>
+          <canvas id="svCanvas" class="sv-canvas" width="268" height="110" aria-label="カラーパレット"></canvas>
+          <canvas id="hueCanvas" class="hue-canvas" width="268" height="16" aria-label="色相"></canvas>
+          <div class="rgb-row">
+            <label>R <input id="rgbR" type="number" min="0" max="255" step="1"></label>
+            <label>G <input id="rgbG" type="number" min="0" max="255" step="1"></label>
+            <label>B <input id="rgbB" type="number" min="0" max="255" step="1"></label>
+            <label>HEX <input id="hexInput" type="text" maxlength="7" spellcheck="false" autocomplete="off"></label>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="actions">
