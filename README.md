@@ -2,7 +2,7 @@
 
 星乃ぽこの配信向けHTMLツール集。BOOTH で配布し、公式サイト(hoshino-poko.com)から案内する。
 
-- 公式サイト本体は別 repo(`brantechs/wp-poko`)
+- 公式サイト本体は別 repo(`Pokkomyu/wp-poko`)
 - 配信アプリ Pokocast は別 repo
 
 ## 役割
@@ -26,7 +26,7 @@ scripts/package-tool.sh roulette
 
 ## Web 公開
 
-`main` のルートを GitHub Pages で公開している(https://brantechs.github.io/poko-tools/)。
+`main` のルートを GitHub Pages で公開している(https://pokkomyu.github.io/poko-tools/)。
 main へのマージ = 公開。設定と OBS での使い方は `docs/release/github-pages.md`。
 
 ## 開発ルール
