@@ -9,6 +9,20 @@
 | 名前ルーレット | https://pokkomyu.github.io/poko-tools/tools/roulette/ |
 
 - repo は 2026-10-02 に `brantechs/poko-tools` → `Pokkomyu/poko-tools`(ぽっこみゅ Organization)へ移管した。旧 `brantechs.github.io` / `hoshino-poko.github.io` の URL は 404 になるので、BOOTH や公式サイトに載せる URL は上の新 URL を使う
+- 公開するのは無料版(`main`)だけ。有償版(`edition/plus`)は main に入れない(`editions.md`)
+
+## 公式サイトからの案内(hoshino-poko.com/tools/)
+
+視聴者向けの入口は公式サイトの案内ページにする(2026-10-01 決定。ツールが増えても `/tools/<tool>/` で並べられる)。
+
+| ページ | URL | 中身 |
+|---|---|---|
+| ツール一覧 | https://hoshino-poko.com/tools/ | 各ツールへのリンク |
+| 名前ルーレット | https://hoshino-poko.com/tools/roulette/ | 説明、「ブラウザで開く」(上の Pages URL)、BOOTH リンク、OBS の設定手順 |
+
+- ページは別 repo `Pokkomyu/wp-poko` の `bin/update_tools_pages.sh` で作る(WordPress の固定ページ)。文面もそちらで管理する
+- OBS に貼る URL は Pages のものをそのまま使う(案内ページは転送ではなくリンク)。ツールの URL を変えたら wp-poko 側の文面も更新する
+- 告知は BOOTH 公開とは別日に行う(「ブラウザ版も出ました」として分ける)
 
 ## 初回設定(devuser)
 1. repo を public にする(Settings → General → Danger Zone → Change visibility)
