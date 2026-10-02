@@ -405,6 +405,7 @@ body.preview { background: var(--c-preview-bg); }
   font-weight: 700;
   resize: none;
 }
+.add-hint { margin: -4px 0 0; font-size: 15px; opacity: .7; }
 
 .actions { display: flex; gap: 16px; }
 
