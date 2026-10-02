@@ -1,7 +1,8 @@
 {
   "name": "roulette",
-  "displayName": "ぽこルーレット",
-  "version": "0.3.0",
+  "displayName": "ぽこルーレット カラー版",
+  "edition": "plus",
+  "version": "0.4.0",
   "obs": {
     "width": 1920,
     "height": 1080,

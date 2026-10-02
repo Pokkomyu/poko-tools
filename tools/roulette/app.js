@@ -4,13 +4,27 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.3.0"; // tool.json と揃える
+  var VERSION = "0.4.0"; // tool.json と揃える
+  var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var WINNER_SHOW_MS = 5000;
   var TWO_PI = Math.PI * 2;
-  var COLORS = ["#ff8fc7", "#ffffff", "#6cb8ff", "#ff6b6b", "#b98cff", "#ffe066"];
+  // 配色テーマ(カラー版)。wheel: 盤の6色(隣り合う項目が同じ色にならない順)、
+  // accent/deep: 見出し・START・影、star: 針と中心の飾り、bg: ブラウザで開いた時のプレビュー背景
+  var THEMES = [
+    { id: "poko",      name: "ぽこ",       wheel: ["#ff8fc7", "#ffffff", "#6cb8ff", "#ff6b6b", "#b98cff", "#ffe066"], accent: "#ff8fc7", deep: "#ff5fae", star: "#ffe066", bg: "#ffd0f5" },
+    { id: "pastel",    name: "パステル",   wheel: ["#ffd1dc", "#fff5ba", "#c9ecff", "#d4f8dc", "#e6d6ff", "#ffe0c7"], accent: "#ffd1dc", deep: "#f49ab5", star: "#fff5ba", bg: "#fff1f6" },
+    { id: "vivid",     name: "ビビッド",   wheel: ["#ff3d7f", "#ffd400", "#00c2ff", "#ff7a00", "#9b5cff", "#00e38c"], accent: "#ff3d7f", deep: "#c4005a", star: "#ffd400", bg: "#fff0f5" },
+    { id: "sakura",    name: "さくら",     wheel: ["#ffb7d5", "#fff4f8", "#ff8fb8", "#ffdce9", "#f7a1c4", "#ffffff"], accent: "#ffb7d5", deep: "#f06ea0", star: "#fff1a8", bg: "#fff0f5" },
+    { id: "umi",       name: "うみ",       wheel: ["#6cb8ff", "#e0f4ff", "#2f8be6", "#9fe3ff", "#4fd1c5", "#ffffff"], accent: "#6cb8ff", deep: "#2f8be6", star: "#ffe066", bg: "#dff1ff" },
+    { id: "yumekawa",  name: "ゆめかわ",   wheel: ["#ffb3ec", "#b3e0ff", "#d6b3ff", "#fff3b3", "#b3ffe6", "#ffffff"], accent: "#ffb3ec", deep: "#d67ad0", star: "#fff3b3", bg: "#f3e6ff" },
+    { id: "mono",      name: "モノトーン", wheel: ["#ffffff", "#d9d9d9", "#8c8c8c", "#f2f2f2", "#b3b3b3", "#666666"], accent: "#d9d9d9", deep: "#666666", star: "#ffffff", bg: "#eeeeee" },
+    { id: "halloween", name: "ハロウィン", wheel: ["#ff8c1a", "#ffe066", "#8e4dc9", "#2b2b2b", "#ffffff", "#ff6b6b"], accent: "#ff8c1a", deep: "#8e4dc9", star: "#ffe066", bg: "#f3e3d2" }
+  ];
+  var theme = THEMES[0];
+  var COLORS = theme.wheel;
   var INK = "#3b2b45";
   var FONT = '"M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Meiryo", system-ui, sans-serif';
   var MAX_NAME_LENGTH = 40;
@@ -39,6 +53,7 @@
     winners: [],   // {n, name}
     spinCount: 0,
     lastWinnerId: null,
+    theme: THEMES[0].id,
     options: { removeOnWin: false, noRepeat: false, showCount: false, sound: true, fanfare: true, congrats: true }
   };
 
@@ -57,6 +72,7 @@
       state.winners = Array.isArray(saved.winners) ? saved.winners : [];
       state.spinCount = saved.spinCount | 0;
       state.lastWinnerId = saved.lastWinnerId || null;
+      if (findTheme(saved.theme)) state.theme = saved.theme;
       for (var k in state.options) {
         if (saved.options && typeof saved.options[k] === "boolean") state.options[k] = saved.options[k];
       }
@@ -112,6 +128,7 @@
     startBtn: $("startBtn"),
     resetBtn: $("resetBtn"),
     version: $("version"),
+    themeList: $("themeList"),
     opt: {
       removeOnWin: $("optRemoveOnWin"),
       noRepeat: $("optNoRepeat"),
@@ -146,6 +163,58 @@
       el.canvas.height = size;
     }
     drawWheel();
+  }
+
+  // ---------- theme (カラー版) ----------
+
+  function findTheme(id) {
+    for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) return THEMES[i];
+    return null;
+  }
+
+  // 盤の色は canvas で描くので COLORS を差し替え、それ以外(見出し・ボタン・影・針)は CSS 変数で切り替える
+  function applyTheme() {
+    theme = findTheme(state.theme) || THEMES[0];
+    COLORS = theme.wheel;
+    var root = document.documentElement.style;
+    root.setProperty("--poko-pink", theme.accent);
+    root.setProperty("--poko-pink-deep", theme.deep);
+    root.setProperty("--poko-yellow", theme.star);
+    root.setProperty("--poko-preview-bg", theme.bg);
+  }
+
+  function setTheme(id) {
+    if (!findTheme(id)) return;
+    state.theme = id;
+    applyTheme();
+    save();
+    render();
+  }
+
+  // 配色の選択肢(起動時に一度だけ作る)。色は実際の盤の6色を並べて見せる
+  function buildThemePicker() {
+    el.themeList.textContent = "";
+    THEMES.forEach(function (t) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "theme";
+      btn.dataset.id = t.id;
+      btn.title = t.name;
+      var sw = document.createElement("span");
+      sw.className = "theme-swatches";
+      t.wheel.forEach(function (c) {
+        var i = document.createElement("i");
+        i.style.background = c;
+        sw.appendChild(i);
+      });
+      var name = document.createElement("span");
+      name.className = "theme-name";
+      name.textContent = t.name;
+      btn.appendChild(sw);
+      btn.appendChild(name);
+      btn.addEventListener("click", function () { setTheme(t.id); });
+      el.themeList.appendChild(btn);
+    });
   }
 
   // ---------- wheel ----------
@@ -244,7 +313,7 @@
 
     ctx.beginPath();
     ctx.arc(c, c, 26 * k, 0, TWO_PI);
-    ctx.fillStyle = "#ffe066";
+    ctx.fillStyle = theme.star;
     ctx.fill();
     ctx.lineWidth = 6 * k;
     ctx.stroke();
@@ -599,6 +668,10 @@
     el.spinCount.textContent = state.spinCount + "回目";
 
     for (var k in el.opt) el.opt[k].checked = state.options[k];
+    Array.prototype.forEach.call(el.themeList.children, function (btn) {
+      btn.classList.toggle("active", btn.dataset.id === state.theme);
+      btn.setAttribute("aria-pressed", btn.dataset.id === state.theme ? "true" : "false");
+    });
     el.winnerLabel.hidden = !state.options.congrats; // 当選表示中の切替にもすぐ反映
 
     el.startBtn.disabled = spinning || n === 0;
@@ -633,8 +706,10 @@
 
   // ---------- boot ----------
 
-  el.version.textContent = "ぽこルーレット v" + VERSION;
+  el.version.textContent = "ぽこルーレット " + EDITION + " v" + VERSION;
   load();
+  applyTheme();
+  buildThemePicker();
   render();
   fitStage();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawWheel);
@@ -642,6 +717,8 @@
   // 検証用フック(動作には影響しない)
   window.__pokoRoulette = {
     state: state,
+    themes: THEMES,
+    setTheme: setTheme,
     indexAtPointer: function () { return indexAtPointer(state.entries.length); },
     isSpinning: function () { return spinning; }
   };

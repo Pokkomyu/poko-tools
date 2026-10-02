@@ -22,9 +22,14 @@ for f in ["index.html", "style.css", "app.js", "CREDITS.md", "CHANGELOG.md"]:
 if (src / "assets").is_dir():
     files += [(p, str(p.relative_to(src))) for p in sorted((src / "assets").rglob("*")) if p.is_file()]
 files.append((src / "MANUAL.md", "使い方.txt"))
-files.append((root / "packaging" / "LICENSE_ja.md", "利用規約.txt"))
+# 有償版(tool.json の edition)は専用の利用規約があればそれを同梱し、zip 名にも edition を付ける
+edition = meta.get("edition")
+license_file = root / "packaging" / f"LICENSE_{edition}_ja.md" if edition else None
+if not (license_file and license_file.is_file()):
+    license_file = root / "packaging" / "LICENSE_ja.md"
+files.append((license_file, "利用規約.txt"))
 
-out = root / "dist" / f"{name}-v{meta['version']}.zip"
+out = root / "dist" / f"{name}{'-' + edition if edition else ''}-v{meta['version']}.zip"
 out.parent.mkdir(exist_ok=True)
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for path, arc in files:
