@@ -244,6 +244,13 @@ body.preview { background: var(--c-preview-bg); }
 
 .entries { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .entries-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.entries-actions { display: flex; gap: 8px; }
+.btn-shuffle { background: var(--poko-red); color: var(--poko-white); }
+.entry-list.shuffling li { animation: shuffle-pop .16s ease-out; }
+@keyframes shuffle-pop {
+  0% { transform: translateX(-6px); opacity: .4; }
+  100% { transform: none; opacity: 1; }
+}
 .entry-list {
   flex: 1;
   margin: 0;

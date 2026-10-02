@@ -115,11 +115,12 @@
     lastWinnerId: null,
     theme: PRESETS[0].id,
     customThemes: [], // {id, name, colors} 最大 MAX_CUSTOM 件
-    options: { removeOnWin: false, noRepeat: false, showCount: false, sound: true, fanfare: true, congrats: true }
+    options: { removeOnWin: false, noRepeat: false, shuffleEach: false, showCount: false, sound: true, fanfare: true, congrats: true }
   };
 
   var rotation = 0;
   var spinning = false;
+  var shuffling = false; // シャッフル演出中(回転と同じく操作を止める)
   var pendingRemovalId = null;
   var winnerTimer = null;
   var nextId = 1;
@@ -193,6 +194,7 @@
     entryList: $("entryList"),
     entryCount: $("entryCount"),
     clearEntries: $("clearEntries"),
+    shuffleBtn: $("shuffleBtn"),
     addInput: $("addInput"),
     addBtn: $("addBtn"),
     startBtn: $("startBtn"),
@@ -215,6 +217,7 @@
     opt: {
       removeOnWin: $("optRemoveOnWin"),
       noRepeat: $("optNoRepeat"),
+      shuffleEach: $("optShuffleEach"),
       showCount: $("optShowCount"),
       sound: $("optSound"),
       fanfare: $("optFanfare"),
@@ -775,6 +778,11 @@
     tone(1650, 0, 0.04, "triangle", 0.18);
   }
 
+  function playShuffle() {
+    if (!state.options.sound) return;
+    tone(700 + randInt(500), 0, 0.05, "square", 0.08);
+  }
+
   function playWin() {
     if (!state.options.sound || !state.options.fanfare) return;
     [523.25, 659.25, 783.99, 1046.5].forEach(function (f, i) {
@@ -849,12 +857,20 @@
   }
 
   function start() {
-    if (spinning) return;
+    if (spinning || shuffling) return;
     finishWinnerDisplay();
+    if (state.entries.length === 0) return;
+    audioCtx(); // ユーザー操作の中で音声を有効化する
+    if (state.options.shuffleEach && state.entries.length > 1) {
+      shuffleEntries(spin);
+    } else {
+      spin();
+    }
+  }
+
+  function spin() {
     var n = state.entries.length;
     if (n === 0) return;
-
-    audioCtx(); // ユーザー操作の中で音声を有効化する
 
     var seg = TWO_PI / n;
     var w = pickWinnerIndex();
@@ -961,6 +977,53 @@
     }
   }
 
+  // ---------- shuffle ----------
+
+  // Fisher-Yates(crypto 乱数)
+  function shuffledEntries() {
+    var a = state.entries.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = randInt(i + 1);
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // 演出: 短い間隔で並びを何度も入れ替え、だんだん間隔を広げて止まる。最後の並びが本当の結果
+  var SHUFFLE_STEPS_MS = [60, 60, 60, 70, 80, 90, 110, 130, 160, 200, 250];
+
+  function shuffleEntries(done) {
+    if (shuffling || spinning) return;
+    if (state.entries.length < 2) { if (done) done(); return; }
+    finishWinnerDisplay();
+    audioCtx();
+    shuffling = true;
+    el.entryList.classList.add("shuffling");
+    render();
+    var step = 0;
+    function tick() {
+      state.entries = shuffledEntries();
+      playShuffle();
+      kickPointer(KICK_FULL_SPEED);
+      render();
+      // li のアニメーションを毎回再生する
+      el.entryList.classList.remove("shuffling");
+      void el.entryList.offsetWidth;
+      el.entryList.classList.add("shuffling");
+      step++;
+      if (step < SHUFFLE_STEPS_MS.length) {
+        setTimeout(tick, SHUFFLE_STEPS_MS[step]);
+      } else {
+        shuffling = false;
+        el.entryList.classList.remove("shuffling");
+        save();
+        render();
+        if (done) done();
+      }
+    }
+    setTimeout(tick, SHUFFLE_STEPS_MS[0]);
+  }
+
   // ---------- entries ----------
 
   function indexOfId(id) {
@@ -969,7 +1032,7 @@
   }
 
   function addFromInput() {
-    if (spinning) return;
+    if (spinning || shuffling) return;
     var names = el.addInput.value
       .split(/\r?\n/)
       .map(function (s) { return s.trim().slice(0, MAX_NAME_LENGTH); })
@@ -985,7 +1048,7 @@
   }
 
   function removeEntry(id) {
-    if (spinning) return;
+    if (spinning || shuffling) return;
     finishWinnerDisplay();
     var i = indexOfId(id);
     if (i < 0) return;
@@ -997,7 +1060,7 @@
   // 誤操作防止: 2回押しで全消去(OBSの対話ウィンドウでは confirm() が出ないため)
   var clearArmTimer = null;
   function clearEntries() {
-    if (spinning) return;
+    if (spinning || shuffling) return;
     if (!el.clearEntries.classList.contains("armed")) {
       el.clearEntries.classList.add("armed");
       el.clearEntries.textContent = "もう一回で消去";
@@ -1020,7 +1083,7 @@
   }
 
   function resetResults() {
-    if (spinning) return;
+    if (spinning || shuffling) return;
     finishWinnerDisplay();
     state.entries = state.entries.concat(state.removed);
     state.removed = [];
@@ -1058,7 +1121,7 @@
       del.type = "button";
       del.textContent = "×";
       del.title = e.name + " を削除";
-      del.disabled = spinning;
+      del.disabled = spinning || shuffling;
       del.addEventListener("click", function () { removeEntry(e.id); });
       li.appendChild(sw);
       li.appendChild(name);
@@ -1089,10 +1152,11 @@
     renderThemeUI();
     el.winnerLabel.hidden = !state.options.congrats; // 当選表示中の切替にもすぐ反映
 
-    el.startBtn.disabled = spinning || n === 0;
-    el.addBtn.disabled = spinning;
-    el.resetBtn.disabled = spinning;
-    el.clearEntries.disabled = spinning || (n === 0 && state.removed.length === 0);
+    el.startBtn.disabled = spinning || shuffling || n === 0;
+    el.addBtn.disabled = spinning || shuffling;
+    el.resetBtn.disabled = spinning || shuffling;
+    el.clearEntries.disabled = spinning || shuffling || (n === 0 && state.removed.length === 0);
+    el.shuffleBtn.disabled = spinning || shuffling || n < 2;
     el.wheelArea.classList.toggle("spinning", spinning);
 
     if (!spinning) drawWheel();
@@ -1104,6 +1168,7 @@
   el.resetBtn.addEventListener("click", resetResults);
   el.addBtn.addEventListener("click", addFromInput);
   el.clearEntries.addEventListener("click", clearEntries);
+  el.shuffleBtn.addEventListener("click", function () { shuffleEntries(); });
   el.addInput.addEventListener("keydown", function (ev) {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
       ev.preventDefault();
@@ -1141,6 +1206,7 @@
     deleteCustom: deleteCustom,
     showTab: showTab,
     indexAtPointer: function () { return indexAtPointer(state.entries.length); },
-    isSpinning: function () { return spinning; }
+    isSpinning: function () { return spinning; },
+    isShuffling: function () { return shuffling; }
   };
 })();
