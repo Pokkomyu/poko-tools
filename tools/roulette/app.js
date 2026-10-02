@@ -63,6 +63,9 @@
     return { id: id, name: name, colors: c };
   }
   var PRESETS = [
+    // 盤の 6 色はぽこ指定(2026-10-02)。それ以外(線・文字・針・見出し)は「ぽこ」と同じ。紺の項目も白いふちで読める
+    makePreset("uchuneko", "宇宙猫", { wheel: ["#ff96c8", "#fffef4", "#3d3da5", "#ff62c9", "#b47eff", "#ffff4a"],
+      ink: "#3b2b45", star: "#ffe066", paper: "#ffffff", accent: "#ff8fc7", deep: "#ff5fae", bg: "#ffd0f5" }),
     makePreset("poko", "ぽこ", { wheel: ["#ff8fc7", "#ffffff", "#6cb8ff", "#ff6b6b", "#b98cff", "#ffe066"],
       ink: "#3b2b45", star: "#ffe066", paper: "#ffffff", accent: "#ff8fc7", deep: "#ff5fae", bg: "#ffd0f5" }),
     makePreset("pastel", "パステル", { wheel: ["#ffd1dc", "#fff5ba", "#c9ecff", "#d4f8dc", "#e6d6ff", "#ffe0c7"],
