@@ -5,8 +5,10 @@
 
 | 対象 | URL |
 |---|---|
-| 一覧 | https://brantechs.github.io/poko-tools/ |
-| 名前ルーレット | https://brantechs.github.io/poko-tools/tools/roulette/ |
+| 一覧 | https://pokkomyu.github.io/poko-tools/ |
+| 名前ルーレット | https://pokkomyu.github.io/poko-tools/tools/roulette/ |
+
+- repo は 2026-10-02 に `brantechs/poko-tools` → `Pokkomyu/poko-tools`(ぽっこみゅ Organization)へ移管した。旧 `brantechs.github.io` / `hoshino-poko.github.io` の URL は 404 になるので、BOOTH や公式サイトに載せる URL は上の新 URL を使う
 
 ## 初回設定(devuser)
 1. repo を public にする(Settings → General → Danger Zone → Change visibility)
