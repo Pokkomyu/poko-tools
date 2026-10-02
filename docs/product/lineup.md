@@ -4,7 +4,7 @@
 
 | # | tool | 表示名 | 状態 | BOOTH | サイト公開 |
 |---|---|---|---|---|---|
-| 1 | roulette | 名前ルーレット | v0.3.0 | 出品準備中(無料版 + 開発支援版 300円、中身は同じ) | GitHub Pages(案内は hoshino-poko.com/tools/roulette) |
+| 1 | roulette | 名前ルーレット | v0.3.1 | 出品準備中(無料版 + 開発支援版 300円、中身は同じ) | GitHub Pages(案内は hoshino-poko.com/tools/roulette) |
 | 1+ | roulette(カラー版) | ぽこルーレット カラー版 | v0.4.0(ブランチ `edition/plus`) | 有償版として別出品予定 | 公開しない |
 
 - 公式サイトの案内ページ: https://hoshino-poko.com/tools/roulette/ (wp-poko 側。ブラウザ版は BOOTH とは別日に告知する)
