@@ -4,19 +4,23 @@
 <meta charset="UTF-8">
 <title>本日のチャレンジ</title>
 <style>
+  @font-face {
+    font-family: "けいふぉんと";
+    src: url("assets/keifont/keifont.ttf") format("truetype");
+  }
   :root {
-  --accent: #e8e8e8;
-  --dim: #8a8a8a;
-  --line: rgba(232,232,232,.22);
-  --bg: rgba(8, 8, 10, .94);
-  --text: #f2f2f2;
-  --done: #8f8f8f;
-}
+    --accent: #ff9ec4;
+    --dim: #c48aa3;
+    --line: rgba(255,158,196,.28);
+    --bg: rgba(42, 16, 28, .90);
+    --text: #ffe6f1;
+    --done: #c9a3b4;
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
     background: transparent;
-    font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif;
+    font-family: "けいふぉんと", "Yu Gothic UI", "Meiryo", sans-serif;
     color: var(--text);
   }
   .wrap { display: flex; align-items: flex-start; gap: 16px; }
@@ -90,6 +94,7 @@
     transform: rotate(45deg);
     cursor: pointer;
     flex: 0 0 auto;
+    position: relative;
   }
   .check.done {
     background: var(--accent);
@@ -167,7 +172,7 @@
 </div>
 <script>
 if (typeof window.obsstudio === "undefined" && new URLSearchParams(location.search).get("bg") !== "transparent") document.body.classList.add("preview");
-const KEY = "poko-tracker-black-v1";
+const KEY = "poko-tracker-pink-keifont-v1";
 let composing = false;
 let state = {
   running: false, elapsed: 0, startedAt: null,
