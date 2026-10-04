@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 0.2.0 (2026-10-04)
+- けいふぉんと版(`pink-keifont.html`、ピンク)を追加。フォント `keifont.ttf`(Apache License 2.0)を `assets/keifont/` に同梱したので、フォントを自分で用意する必要はない
+
 ## 0.1.1 (2026-10-04)
 - OBS の外(普通のブラウザ)で開いた時は、透過する部分を市松模様で表示する。OBS では今まで通り透明。URL に `?bg=transparent` を付けると OBS の外でも透明のまま
 
