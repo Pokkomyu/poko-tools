@@ -7,6 +7,7 @@
 |---|---|
 | 一覧 | https://pokkomyu.github.io/poko-tools/ |
 | 名前ルーレット | https://pokkomyu.github.io/poko-tools/tools/roulette/ |
+| 本日のチャレンジ | https://pokkomyu.github.io/poko-tools/tools/tracker/ (色ごとに `pink.html` などを OBS に貼る) |
 
 - repo は 2026-10-02 に `brantechs/poko-tools` → `Pokkomyu/poko-tools`(ぽっこみゅ Organization)へ移管した。旧 `brantechs.github.io` / `hoshino-poko.github.io` の URL は 404 になるので、BOOTH や公式サイトに載せる URL は上の新 URL を使う
 - 公開するのは無料版(`main`)だけ。有償版(`edition/plus`)は main に入れない(`editions.md`)

@@ -16,7 +16,10 @@ top = meta["displayName"]
 
 # 配布に含めるのは実行に必要なファイルとドキュメントだけ(tool.json などは含めない)
 files = []
-for f in ["index.html", "style.css", "app.js", "CREDITS.md", "CHANGELOG.md"]:
+# 直下の *.html はすべて入れる(tracker のように色ごとに HTML を分けるツールがある)
+for p in sorted(src.glob("*.html")):
+    files.append((p, p.name))
+for f in ["style.css", "app.js", "CREDITS.md", "CHANGELOG.md"]:
     if (src / f).is_file():
         files.append((src / f, f))
 if (src / "assets").is_dir():
