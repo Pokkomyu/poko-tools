@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.3.1"; // tool.json と揃える
+  var VERSION = "0.3.2"; // tool.json と揃える
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
   var STAGE_H = 1080;
