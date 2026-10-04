@@ -44,4 +44,17 @@ scripts/package-tool.sh roulette   # dist/roulette-plus-v0.4.0.zip(利用規約�
 ```
 
 - 出品前チェックは無料版と同じ(`booth-checklist.md`)
+
+## 本番(hoshino-poko.com の限定版)に配置する
+
+```bash
+scripts/deploy-plus.sh roulette           # zip を作る → cnh-vps の ~/temp に送る → 本番で dry-run
+scripts/deploy-plus.sh roulette --apply   # 同じ流れで、最後に本番へ反映
+```
+
+- zip はツール単体の製品(`tools/<tool>/` だけ)。ツールが増えても 1 回に 1 ツールずつ配置する
+- `edition: plus` のツールだけを受け付ける。`edition/plus` 以外のブランチや未コミットの変更があると WARN を出す
+- 本番側の展開は wp-poko の `bin/update_plus_files.sh`(前の版は `~/wp-poko-backups/plus/` に退避)。接続先は `DEPLOY_HOST`(既定 `branch@cnh-vps`)で変えられる
+- 新しいツールを初めて配置した時は、pokonya のカタログに登録する(`bin/pokonya tools add <tool> --name "..." --obs-dir <tool> --enable`)
+- 同じ zip を BOOTH に出品する
 - ブランチ上の `tools/<tool>/MANUAL.md` と `CHANGELOG.md` は有償版の内容になっている(無料版の履歴も含む)
