@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 0.3.0 (2026-10-04)
+- すべての色の文字をけいふぉんとにした(クエスト画面風の英数字も含む)。けいふぉんと版 `pink-keifont.html` は `pink.html` に統合して削除
+
 ## 0.2.0 (2026-10-04)
 - けいふぉんと版(`pink-keifont.html`、ピンク)を追加。フォント `keifont.ttf`(Apache License 2.0)を `assets/keifont/` に同梱したので、フォントを自分で用意する必要はない
 
