@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本日のチャレンジ(作業トラッカー)</title>
+<style>
+  body { margin: 0; padding: 40px 16px; background: #fff5fb; color: #3b2b45; font-family: "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Meiryo", system-ui, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 28px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  th, td { padding: 10px; border-bottom: 1px solid #f3d3e3; text-align: left; vertical-align: top; }
+  a { color: #e0559a; font-weight: 700; }
+  code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; background: #fff0f7; padding: 2px 6px; border-radius: 6px; font-size: 13px; }
+  .muted { color: #8a7a93; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>本日のチャレンジ</h1>
+  <p>配信画面に出せる、やることリスト付きの作業トラッカーです。使いたい色の URL を OBS のブラウザソースに貼ってください(幅 720 / 高さ 900)。</p>
+  <table>
+    <thead><tr><th>見た目</th><th>OBS に貼る URL</th></tr></thead>
+    <tbody id="themes"></tbody>
+  </table>
+  <p class="muted">色違いは配色だけ変えています。記録は色ごとに別々です。クエスト画面風は雰囲気を参考にした非公式デザインで、特定のゲームの公式・公認ではありません。</p>
+  <p class="muted">本日のチャレンジ v0.1.0 / <a href="../../">ツール一覧へ</a></p>
+</main>
+<script>
+  var themes = [
+    ["pink.html", "ピンク"], ["red.html", "赤"], ["white.html", "白"],
+    ["black.html", "黒"], ["purple.html", "紫"], ["quest.html", "クエスト画面風"]
+  ];
+  document.getElementById("themes").innerHTML = themes.map(function (t) {
+    var url = new URL(t[0], location.href).href;
+    return '<tr><td><a href="' + t[0] + '">' + t[1] + '</a></td><td><code>' + url + '</code></td></tr>';
+  }).join("");
+</script>
+</body>
+</html>
