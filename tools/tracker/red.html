@@ -132,6 +132,8 @@
     line-height: 1.5;
   }
   .note { margin-top: 12px; font-size: 11px; line-height: 1.6; color: var(--dim); }
+  /* OBS の外で開いた時だけ、透過部分が分かるように市松模様を出す(?bg=transparent で消せる) */
+  body.preview { background: repeating-conic-gradient(#8a8a8a 0 25%, #a8a8a8 0 50%) 0 0 / 24px 24px; min-height: 100vh; }
 </style>
 </head>
 <body>
@@ -160,10 +162,11 @@
     <p style="margin-top:14px">まとめて追加</p>
     <textarea id="bulk" placeholder="1行に1タスク&#10;ショート動画作成&#10;ご飯食べる&#10;お風呂入る"></textarea>
     <button class="ctrl" id="bulkAdd">貼り付けて追加</button>
-    <div class="note">メモ帳で書いてここに貼ってください。右側は配信で切り取って隠します。<br>本日のチャレンジ v0.1.0</div>
+    <div class="note">メモ帳で書いてここに貼ってください。右側は配信で切り取って隠します。<br>本日のチャレンジ v0.1.1</div>
   </div>
 </div>
 <script>
+if (typeof window.obsstudio === "undefined" && new URLSearchParams(location.search).get("bg") !== "transparent") document.body.classList.add("preview");
 const KEY = "poko-tracker-red-v1";
 let composing = false;
 let state = {
