@@ -41,3 +41,7 @@ main へのマージ = 公開。設定と OBS での使い方は `docs/release/g
 ## 開発ルール
 
 `AGENTS.md` と `docs/development/conventions.md` を必ず読むこと。
+
+## ライセンス
+
+オープンソースライセンスではない。無料版は `packaging/LICENSE_ja.md`(要約は `LICENSE.md`、方針は `docs/release/terms.md`)。
