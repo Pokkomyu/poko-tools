@@ -24,6 +24,15 @@ scripts/package-tool.sh roulette
 
 `dist/` に出力される(git管理外)。
 
+無料版は GitHub Release にも上げる(版ごとに 1 回。zip はツール単体):
+
+```bash
+scripts/release-free.sh roulette           # dry-run(作る Release の内容を表示)
+scripts/release-free.sh roulette --apply   # Release roulette-v<version> を作って zip を添付
+```
+
+有償版(`edition/plus`)はこの公開 repo の Release には上げない(`scripts/deploy-plus.sh` と BOOTH のみ)。
+
 ## Web 公開
 
 `main` のルートを GitHub Pages で公開している(https://pokkomyu.github.io/poko-tools/)。
