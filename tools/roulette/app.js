@@ -23,7 +23,7 @@
     { name: "当選表示", parts: [
       ["winner-label-bg", "「おめでとう!」の背景"], ["winner-name-bg", "名前の背景"],
       ["winner-text", "文字"], ["winner-border", "枠"], ["winner-shadow", "影"]] },
-    { name: "当たった人の一覧", parts: [
+    { name: "当選履歴", parts: [
       ["list-title-bg", "見出しの背景"], ["list-title-text", "見出しの文字"], ["list-bg", "背景"],
       ["list-text", "文字"], ["list-number", "番号"], ["list-border", "枠"]] },
     { name: "回数表示", parts: [["count-bg", "背景"], ["count-text", "文字"], ["count-border", "枠"]] },

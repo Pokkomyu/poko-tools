@@ -162,7 +162,7 @@ body.preview { background: var(--c-preview-bg); }
 }
 @keyframes winner-out { to { transform: scale(.6); opacity: 0; } }
 
-/* ===== 当たった人の一覧 ===== */
+/* ===== 当選履歴 ===== */
 .winners {
   position: absolute;
   left: 700px;
