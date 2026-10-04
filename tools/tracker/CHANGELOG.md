@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 0.1.1 (2026-10-04)
+- OBS の外(普通のブラウザ)で開いた時は、透過する部分を市松模様で表示する。OBS では今まで通り透明。URL に `?bg=transparent` を付けると OBS の外でも透明のまま
+
 ## 0.1.0 (2026-10-04)
 - `Pokkomyu/obs-work-tracker` から移植(ピンク / 赤 / 白 / 黒 / 紫 / クエスト画面風)
 - 色ごとの HTML を `<色>.html` に改名(`tracker-tarkov.html` は `quest.html`)。`index.html` は色を選ぶページ
