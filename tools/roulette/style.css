@@ -499,3 +499,9 @@ html.mobile .add textarea { font-size: 16px; } /* 16px 未満だと iOS が入�
 html.mobile .btn-add { width: 88px; font-size: 22px; }
 html.mobile .add-hint { font-size: 12px; }
 html.mobile .version { margin-top: 0; font-size: 12px; }
+
+/* スマホ表示の配色タブ(カラー版): パーツ一覧と色選びを縦に並べる */
+html.mobile .tab-panel { flex: none; }
+html.mobile .theme-editor { flex: none; flex-direction: column; overflow: visible; }
+html.mobile .picker { width: auto; }
+html.mobile .part-list { flex: none; max-height: 40vh; }
