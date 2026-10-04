@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.4.0"; // tool.json と揃える
+  var VERSION = "0.4.1"; // tool.json と揃える
   var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
@@ -183,6 +183,7 @@
 
   var el = {
     stage: $("stage"),
+    screen: document.querySelector(".screen"),
     wheelArea: document.querySelector(".wheel-area"),
     canvas: $("wheel"),
     pointer: document.querySelector(".pointer"),
@@ -232,12 +233,33 @@
   var params = new URLSearchParams(location.search);
   if (!isObs && params.get("bg") !== "transparent") document.body.classList.add("preview");
 
+  // スマホ表示: 幅が狭いか縦長の時は、ルーレット+当選履歴(SCREEN_W x SCREEN_H)を幅に合わせて縮小し、
+  // 操作パネルはその下に普通の大きさで並べる(縦スクロール)。OBS 内では常に 1920x1080
+  var SCREEN_W = 990;
+  var SCREEN_H = 740;
   var stageScale = 1;
   function fitStage() {
-    stageScale = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
-    var left = (window.innerWidth - STAGE_W * stageScale) / 2;
-    var top = (window.innerHeight - STAGE_H * stageScale) / 2;
-    el.stage.style.transform = "translate(" + left + "px," + top + "px) scale(" + stageScale + ")";
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    var mobile = !isObs && (w < 900 || w < h);
+    document.documentElement.classList.toggle("mobile", mobile);
+    if (mobile) {
+      el.stage.style.transform = "";
+      var cs = getComputedStyle(el.stage);
+      var avail = el.stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      // 横向きのスマホでも START(約 100px)まで 1 画面に収まるよう高さでも制限する
+      stageScale = Math.min(1, avail / SCREEN_W, Math.max(0.3, (h - 100) / SCREEN_H));
+      el.screen.style.transform = "scale(" + stageScale + ")";
+      // transform はレイアウト上の大きさを変えないので、縮んだ分を margin で詰める
+      el.screen.style.marginRight = (SCREEN_W * stageScale - SCREEN_W) + "px";
+      el.screen.style.marginBottom = (SCREEN_H * stageScale - SCREEN_H) + "px";
+    } else {
+      el.screen.style.transform = el.screen.style.marginRight = el.screen.style.marginBottom = "";
+      stageScale = Math.min(w / STAGE_W, h / STAGE_H);
+      var left = (w - STAGE_W * stageScale) / 2;
+      var top = (h - STAGE_H * stageScale) / 2;
+      el.stage.style.transform = "translate(" + left + "px," + top + "px) scale(" + stageScale + ")";
+    }
     resizeCanvas();
   }
 

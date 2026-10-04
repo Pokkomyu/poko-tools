@@ -9,7 +9,8 @@
 <body>
 <div id="stage" class="stage">
 
-  <!-- ===== 配信に映す領域 ===== -->
+  <!-- ===== 配信に映す領域(スマホ表示ではこの単位で縮小する) ===== -->
+  <div class="screen">
   <section class="wheel-area" aria-label="ルーレット">
     <div id="spinCount" class="spin-count" hidden></div>
     <svg class="pointer" viewBox="0 0 60 110" aria-hidden="true">
@@ -27,6 +28,7 @@
     <h2 class="winners-title">当選履歴</h2>
     <ol id="winnerList" class="winner-list"></ol>
   </section>
+  </div>
 
   <!-- ===== 操作パネル(OBSではクロップで隠す) ===== -->
   <section class="control" aria-label="操作パネル">
