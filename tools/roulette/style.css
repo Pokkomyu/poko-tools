@@ -278,3 +278,64 @@ body.preview { background: var(--poko-preview-bg); }
 .btn-reset { flex: 1; height: 96px; background: var(--poko-white); font-size: 28px; }
 
 .version { text-align: right; font-size: 14px; font-weight: 700; opacity: .5; margin-top: -8px; }
+
+/* ===== スマホ表示(app.js が幅 900px 未満か縦長の時に html.mobile を付ける。OBS 内では付かない) ===== */
+html.mobile,
+html.mobile body { height: auto; overflow-x: hidden; overflow-y: auto; }
+
+html.mobile .stage {
+  position: static;
+  width: auto;
+  max-width: 1024px;
+  height: auto;
+  margin: 0 auto;
+  padding: 12px;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ルーレット + 当選履歴を横一列に並べた 990x740 の領域。app.js が幅に合わせて縮小する */
+html.mobile .screen {
+  position: relative;
+  flex: none;
+  width: 990px;
+  height: 740px;
+  align-self: center; /* 高さで制限されて幅が余った時は中央に寄せる */
+  transform-origin: 0 0;
+}
+html.mobile .wheel-area { left: 0; top: 0; }
+html.mobile .winners { left: 680px; top: 90px; width: 310px; height: 640px; }
+html.mobile .winners-title { font-size: 36px; }
+html.mobile .winner-list { font-size: 34px; }
+html.mobile .winner-list li .n { min-width: 1.8em; }
+
+/* 操作パネル: 等倍で縦に並べ、START を一番上(ルーレットのすぐ下)に出す */
+html.mobile .control {
+  position: static;
+  width: auto;
+  height: auto;
+  gap: 12px;
+  padding: 14px;
+  border-width: 3px;
+  border-radius: 16px;
+  font-size: 16px;
+}
+html.mobile .control-head { font-size: 18px; }
+html.mobile .control-note { display: none; }
+html.mobile .actions { order: -1; gap: 10px; }
+html.mobile .btn-start { height: 64px; font-size: 30px; }
+html.mobile .btn-reset { height: 64px; font-size: 20px; }
+
+html.mobile .control-body { flex-direction: column; gap: 12px; }
+html.mobile .entry-list { flex: none; min-height: 120px; max-height: 40vh; border-width: 2px; }
+html.mobile .entry-list li { padding: 4px 0; }
+html.mobile .entry-list li button { width: 34px; height: 34px; }
+html.mobile .options { width: auto; padding-top: 0; gap: 10px; font-size: 16px; }
+html.mobile .options input { width: 20px; height: 20px; margin-top: 1px; }
+
+html.mobile .add textarea { font-size: 16px; } /* 16px 未満だと iOS が入力時にズームする */
+html.mobile .btn-add { width: 88px; font-size: 22px; }
+html.mobile .add-hint { font-size: 12px; }
+html.mobile .version { margin-top: 0; font-size: 12px; }
