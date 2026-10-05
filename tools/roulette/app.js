@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.4.1"; // tool.json と揃える
+  var VERSION = "0.4.2"; // tool.json と揃える
   var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
@@ -678,6 +678,31 @@
     return Math.floor(normalize(-rotation) / (TWO_PI / n)) % n;
   }
 
+  // 盤の名前の大きさ(半径 300 の盤での px)。長い名前は NAME_MIN_RATIO 倍まで縮め、それでも入らない時だけ … で切る
+  var NAME_MAX = 40, NAME_MAX_SINGLE = 48, NAME_MIN = 14, NAME_MIN_RATIO = 0.5;
+
+  // 1 項目ぶんの名前の大きさと表示文字列を決める(ctx.font を設定して返す)
+  // 外側の端(半径 outer)にそろえて置くので、文字の内側の端が中心に近いほど扇形の幅が狭くなる。
+  // 内側の端で扇形の幅(弦)が文字の高さ以上あることも条件にする
+  function fitName(name, base, minSize, maxWidth, outer, halfSeg) {
+    ctx.font = "800 " + base + "px " + FONT;
+    var perPx = ctx.measureText(name).width / base; // 文字幅は大きさに比例する
+    var size = Math.min(base, maxWidth / perPx);
+    if (halfSeg < Math.PI / 2) {
+      // 内側の端の半径 outer - perPx*size で弦 2ρ·sin(halfSeg) >= size
+      size = Math.min(size, outer / (perPx + 1 / (2 * Math.sin(halfSeg))));
+    }
+    size *= 0.99;
+    if (size >= minSize) {
+      ctx.font = "800 " + size + "px " + FONT;
+      return { size: size, label: name };
+    }
+    ctx.font = "800 " + minSize + "px " + FONT;
+    var w = maxWidth;
+    if (halfSeg < Math.PI / 2) w = Math.min(w, outer - minSize / (2 * Math.sin(halfSeg)));
+    return { size: minSize, label: fitText(name, w) };
+  }
+
   function fitText(text, maxWidth) {
     if (ctx.measureText(text).width <= maxWidth) return text;
     var s = text;
@@ -722,16 +747,20 @@
         }
       }
 
-      // 名前(中心から外向き)
-      var fontSize = Math.max(14, Math.min(40, (TWO_PI * r * 0.55) / n / k * 0.9)) * k;
-      if (n === 1) fontSize = 48 * k;
-      ctx.font = "800 " + fontSize + "px " + FONT;
+      // 名前(中心から外向き)。基準の大きさは項目数で決め、入りきらない名前だけ個別に縮める
+      var baseSize = Math.max(NAME_MIN, Math.min(NAME_MAX, (TWO_PI * r * 0.55) / n / k * 0.9)) * k;
+      if (n === 1) baseSize = NAME_MAX_SINGLE * k;
+      var minSize = Math.max(NAME_MIN * k, baseSize * NAME_MIN_RATIO);
+      // 名前は外側(0.9r)にそろえ、内側は中心の飾りの手前(0.16r)まで使う。1人だけの時は横書きで盤の上側に置くので盤の幅近くまで使える
+      var maxWidth = n === 1 ? r * 1.5 : r * 0.74;
       ctx.textAlign = "right";
       ctx.textBaseline = "middle";
       ctx.lineJoin = "round";
       for (var j = 0; j < n; j++) {
         var mid = -Math.PI / 2 + rotation + (j + 0.5) * seg;
-        var label = fitText(state.entries[j].name, r * 0.66);
+        var fit = fitName(state.entries[j].name, baseSize, minSize, maxWidth, r * 0.9, n === 1 ? Math.PI : seg / 2);
+        var label = fit.label;
+        var fontSize = fit.size;
         ctx.save();
         ctx.translate(c, c);
         ctx.rotate(n === 1 ? 0 : mid);
@@ -964,20 +993,24 @@
     }, WINNER_SHOW_MS);
   }
 
-  // 盤の幅に収まるよう文字サイズを決める(アニメーション中でも測れるよう canvas で計測)
-  // 1行に入らない長い名前は2行に折り返す
+  // 当選した名前を枠に収める。1行で WINNER_ONE_LINE_MIN まで縮めても入らなければ2行に折り返し、
+  // さらに WINNER_MIN まで縮める。それでも入らない時だけ従来どおり … で省略(CSS の ellipsis / line-clamp)。
+  // scrollWidth / clientWidth は transform(登場アニメーション・スマホ表示の縮小)の影響を受けないので、表示中でも測れる
+  var WINNER_MAX = 110, WINNER_ONE_LINE_MIN = 56, WINNER_MIN = 24, WINNER_STEP = 2;
   function fitWinnerName() {
-    var maxSize = 110;
-    var lineWidth = 460; // .winner-name の max-width から枠と余白を引いた幅
-    ctx.save();
-    ctx.font = "800 " + maxSize + "px " + FONT;
-    var width = ctx.measureText(el.winnerName.textContent).width;
-    ctx.restore();
-    var oneLine = Math.floor(maxSize * lineWidth / width);
-    var twoLines = oneLine < 56;
-    var size = twoLines ? Math.floor(maxSize * lineWidth * 1.8 / width) : Math.min(maxSize, oneLine);
-    el.winnerName.classList.toggle("two-lines", twoLines);
-    el.winnerName.style.fontSize = Math.max(28, size) + "px";
+    var e = el.winnerName;
+    var size;
+    e.classList.remove("two-lines");
+    for (size = WINNER_MAX; ; size -= WINNER_STEP) {
+      e.style.fontSize = size + "px";
+      if (e.scrollWidth <= e.clientWidth) return;
+      if (size <= WINNER_ONE_LINE_MIN) break;
+    }
+    e.classList.add("two-lines");
+    for (size = WINNER_ONE_LINE_MIN; ; size -= WINNER_STEP) {
+      e.style.fontSize = size + "px";
+      if (e.scrollHeight <= e.clientHeight + 1 || size <= WINNER_MIN) return;
+    }
   }
 
   // 当選表示を閉じ、「当たったら消す」を反映する
