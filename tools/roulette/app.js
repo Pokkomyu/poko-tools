@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.4.3"; // tool.json と揃える
+  var VERSION = "0.4.4"; // tool.json と揃える
   var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
@@ -115,13 +115,14 @@
   //   squeeze2 : 一度押し返されて、もう一回押して越える
   //   pushback : 当たりを通り過ぎかけて、次の境目で押し返される
   //   pushback2: 押し返されて、もう一回行きかけて、また押し返される
+  // 押し返しが起きる回(squeeze2 / pushback / pushback2)は合わせて 2 割まで(2026-10-09 ぽこ要望「押し返しは1〜2割」)
   // minN: 項目が少ないと 1 項目が大きく、通り過ぎかける動きが長くなりすぎるので出さない
   var DRAMA_KINDS = [
-    { name: "none", weight: 40, minN: 1 },
-    { name: "squeeze", weight: 20, minN: 2 },
-    { name: "squeeze2", weight: 10, minN: 2 },
-    { name: "pushback", weight: 20, minN: 5 },
-    { name: "pushback2", weight: 10, minN: 5 }
+    { name: "none", weight: 50, minN: 1 },
+    { name: "squeeze", weight: 30, minN: 2 },
+    { name: "squeeze2", weight: 5, minN: 2 },
+    { name: "pushback", weight: 10, minN: 5 },
+    { name: "pushback2", weight: 5, minN: 5 }
   ];
   var CONTACT_DEG = 7, CONTACT_SEG = 0.15;   // 釘が針に触れる角度(項目の幅の 15% まで)
   var CONTACT_BEND_DEG = 14;                 // 釘に押された針の最大の傾き
