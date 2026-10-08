@@ -7,7 +7,9 @@
 | 版 | ブランチ | tool.json | 配布 |
 |---|---|---|---|
 | 無料版 | `main` | `edition` なし | BOOTH 無料 + 開発支援版(中身同一) + GitHub Pages |
-| カラー版 | `edition/plus` | `"edition": "plus"`、displayName「ぽこルーレット カラー版」 | BOOTH 有償のみ |
+| カラー版 | `edition/plus` | `"edition": "plus"`、displayName「ぽこルーレット カラー版」 | BOOTH 有償のみ(BOOTH 担当への受け渡しは private repo `Pokkomyu/poko-tools-plus` の Release) |
+
+有償版 zip を BOOTH 担当(星乃ぽこ)に渡すのは、全有償ツール共通の private repo `Pokkomyu/poko-tools-plus` の Release(`scripts/release-edition.sh <tool> --apply`、edition ブランチで実行)。詳細は `plus-dist.md`。poko-tools(public)の Release には上げない。
 
 ## ルール
 
