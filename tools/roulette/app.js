@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.4.2"; // tool.json と揃える
+  var VERSION = "0.4.3"; // tool.json と揃える
   var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
@@ -89,19 +89,43 @@
   var FONT = '"M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Meiryo", system-ui, sans-serif';
   var MAX_NAME_LENGTH = 40;
   // 針のプルプル: 項目の境目が針を通るたびに弾かれ、すぐ減衰する
-  // 弾いた揺れは約0.5秒で減衰する。最後の境目はじわじわ区間の途中で通るので、止まる頃には収まっている
+  // 弾いた揺れは約0.5秒で減衰する。最後の境目を通ってから止まるまでは 0.5 秒以上あるので、止まる頃には収まっている
   var KICK_DEG = 5;
   var KICK_DECAY_MS = 80;
   var KICK_PERIOD_MS = 160;
   var KICK_FULL_SPEED = 6;   // rad/s。これより遅いと弾く強さを弱める
   var KICK_MIN_RATIO = 0.3;
-  // 回転: 減速(MAIN)のあと、最後の境目の手前から「じわじわ」(CREEP)進んで止まる
-  var MAIN_MS_MIN = 3500, MAIN_MS_RANGE = 2000;
-  var CREEP_MS_MIN = 2200, CREEP_MS_RANGE = 1000;
-  var CREEP_LEAD_SEG = 0.5;                  // 最後の境目の何項目ぶん手前からじわじわ始めるか
-  var CREEP_LEAD_MIN = 15 * Math.PI / 180;   // 項目が多い時も、名前がいくつか通り過ぎるように
-  var CREEP_LEAD_MAX = 20 * Math.PI / 180;   // 項目が少なくて1項目が大きい時の上限
-  var CREEP_MAX = 50 * Math.PI / 180;        // じわじわ区間の最大角度(これ以上だと速く見える)
+  // 回転: 減速(MAIN)→ 最後の境目の手前から「じわじわ」(CREEP)→ 針の粘り(DRAMA。ない回もある)で止まる。
+  // どれも毎回乱数で変える(毎回同じだと単調。2026-10-08 ぽこ要望「減速急すぎ」「じわじわの長さがワンパターン」)
+  // MAIN の速度は (1-s)^p で落とす。p が小さいほどブレーキが緩やか(0.3.4 までの p=3 は序盤に急に落ちて見えた)
+  var MAIN_MS_MIN = 3800, MAIN_MS_RANGE = 2000;
+  var MAIN_EASE_MIN = 1.2, MAIN_EASE_RANGE = 1.3;
+  // じわじわの長さ。lead: 当たりに入る境目の何項目ぶん手前から始めるか [下限, 幅]、leadDeg: その角度の範囲、ms: [下限, 幅]
+  var CREEP_KINDS = [
+    { weight: 3, lead: [0.2, 0.2], leadDeg: [8, 14], ms: [1400, 800] },    // あっさり
+    { weight: 4, lead: [0.4, 0.3], leadDeg: [14, 24], ms: [2200, 1000] },  // ふつう
+    { weight: 3, lead: [1.0, 1.2], leadDeg: [25, 70], ms: [3000, 1200] }   // 長い(名前をいくつか通り過ぎる)
+  ];
+  var CREEP_MAX_SPEED = 45 * Math.PI / 180;  // じわじわ開始時の角速度の上限 rad/s(これ以上だと速く見える)。超える時は時間を延ばす
+  var CREEP_MS_MAX = 5000;
+  var CREEP_MS_DRAMA = 0.7; // 粘りがある回はじわじわを短くして、全体が長くなりすぎないようにする
+  // 針の粘り: 境目(釘)が針に触れる範囲で盤が止まりかけ、ギリギリ越えたり押し返されたりする(2026-10-08 ぽこ要望)
+  // 位置は当たりの項目の中の割合 o で表す(1 = 当たりに入る境目、0 = 次の項目との境目)
+  //   squeeze  : 当たりに入る境目で粘って、ギリギリ越える
+  //   squeeze2 : 一度押し返されて、もう一回押して越える
+  //   pushback : 当たりを通り過ぎかけて、次の境目で押し返される
+  //   pushback2: 押し返されて、もう一回行きかけて、また押し返される
+  // minN: 項目が少ないと 1 項目が大きく、通り過ぎかける動きが長くなりすぎるので出さない
+  var DRAMA_KINDS = [
+    { name: "none", weight: 40, minN: 1 },
+    { name: "squeeze", weight: 20, minN: 2 },
+    { name: "squeeze2", weight: 10, minN: 2 },
+    { name: "pushback", weight: 20, minN: 5 },
+    { name: "pushback2", weight: 10, minN: 5 }
+  ];
+  var CONTACT_DEG = 7, CONTACT_SEG = 0.15;   // 釘が針に触れる角度(項目の幅の 15% まで)
+  var CONTACT_BEND_DEG = 14;                 // 釘に押された針の最大の傾き
+  var CONTACT_SPEED = 1.5;                   // rad/s。これより速い時は押されて見えないので傾けない
   // 中心の飾りと重ならないよう、盤の中の文字を上にずらす量(半径比)
   var OFF_CENTER_Y = 0.35;
 
@@ -853,28 +877,116 @@
     return candidates[randInt(candidates.length)];
   }
 
-  // 回転の動き(経過ms → {x: 進んだ角度, v: 角速度 rad/s})を作る
-  // MAIN: easeOutQuart に一定速度を少し混ぜ、CREEP の初速とつなぐ
-  // CREEP: 距離 creep を easeOutQuad で進む(初速 2*creep/T から 0 へ)
-  function makeSpinCurve(delta, creep, mainMs, creepMs) {
-    var mainDist = delta - creep;
+  function randRange(r) { return r[0] + randFloat() * r[1]; }
+
+  function pickWeighted(list) {
+    var total = 0;
+    list.forEach(function (k) { total += k.weight; });
+    var r = randFloat() * total;
+    for (var i = 0; i < list.length; i++) {
+      r -= list[i].weight;
+      if (r < 0) return list[i];
+    }
+    return list[list.length - 1];
+  }
+
+  // 粘りの動き: [かける時間ms, 止まる位置 o] の列。最後が止まる位置(offset)
+  // E(c) / N(c): 当たりに入る境目 / 次の境目で、釘に c だけ押し込んだ位置(1 = 境目そのもの、負 = 触れる範囲の外へ戻る)
+  function dramaKeys(kind, z, offset) {
+    function E(c) { return 1 + z * (1 - c); }
+    function N(c) { return z * (1 - c); }
+    function t(ms) { return ms * (0.8 + randFloat() * 0.45); }
+    switch (kind) {
+      case "squeeze":
+        return [[0, E(0.7)], [t(400), E(0.45)], [t(450), E(0.9)], [t(1400), offset]];
+      case "squeeze2":
+        return [[0, E(0.7)], [t(350), E(0.5)], [t(400), E(0.85)], [t(700), E(-1.5)],
+          [t(900), E(0.8)], [t(350), E(0.6)], [t(1300), offset]];
+      case "pushback":
+        return [[0, N(0.65)], [t(350), N(0.45)], [t(450), N(0.92)], [t(1000), offset]];
+      case "pushback2":
+        return [[0, N(0.75)], [t(400), N(0.9)], [t(800), N(-2)], [t(900), N(0.85)],
+          [t(300), N(0.6)], [t(1000), offset]];
+      default:
+        return [[0, offset]];
+    }
+  }
+
+  // 止まる位置(当たりの項目の中の割合)。境界ギリギリには止めない。押し返しは押された分だけ境目から離れる
+  function pickOffset(kind) {
+    if (kind === "squeeze" || kind === "squeeze2") return 0.55 + randFloat() * 0.3;
+    if (kind === "pushback" || kind === "pushback2") return 0.2 + randFloat() * 0.25;
+    return 0.15 + randFloat() * 0.7;
+  }
+
+  // 3次エルミート補間。区間 {t0,t1,x0,x1,v0,v1}(ms, rad, rad/s)
+  function hermite(g, ms) {
+    var T = (g.t1 - g.t0) / 1000;
+    var s = Math.max(0, Math.min(1, (ms - g.t0) / (g.t1 - g.t0)));
+    var s2 = s * s, s3 = s2 * s, m0 = g.v0 * T, m1 = g.v1 * T;
+    return {
+      x: (2 * s3 - 3 * s2 + 1) * g.x0 + (s3 - 2 * s2 + s) * m0 + (-2 * s3 + 3 * s2) * g.x1 + (s3 - s2) * m1,
+      v: ((6 * s2 - 6 * s) * g.x0 + (3 * s2 - 4 * s + 1) * m0 + (-6 * s2 + 6 * s) * g.x1 + (3 * s2 - 2 * s) * m1) / T
+    };
+  }
+
+  // 1 回ぶんの動き(経過ms → {x: 進んだ角度, v: 角速度 rad/s})を作る
+  // MAIN: 速度 vJoin + A(1-s)^p。CREEP: 初速 vJoin から 0 まで(easeOutQuad)。DRAMA: 止まる位置どうしを滑らかにつなぐ
+  function planSpin(n, w, from) {
+    var seg = TWO_PI / n;
+    var kinds = DRAMA_KINDS.filter(function (k) { return n >= k.minN; });
+    var drama = pickWeighted(kinds).name;
+    var offset = pickOffset(drama);
+    var target = -(w + offset) * seg;
+    var turns = 5 + randInt(3);
+    var delta = turns * TWO_PI + normalize(target - from);
+    // 当たりの項目の中の位置 o → 進む角度
+    function xAt(o) { return delta + (offset - o) * seg; }
+
+    var z = Math.min(CONTACT_DEG * Math.PI / 180, CONTACT_SEG * seg) / seg;
+    var keys = dramaKeys(drama, z, offset);
+
+    var ck = pickWeighted(CREEP_KINDS);
+    var lead = Math.min(Math.max(randRange(ck.lead) * seg, ck.leadDeg[0] * Math.PI / 180), ck.leadDeg[1] * Math.PI / 180);
+    lead = Math.max(lead, 2.5 * z * seg); // 粘る位置より手前から始める
+    var creepFrom = xAt(1) - lead;
+    var creepTo = xAt(keys[0][1]);
+    var creepDist = creepTo - creepFrom;
+    var creepMs = randRange(ck.ms) * (drama === "none" ? 1 : CREEP_MS_DRAMA);
+    creepMs = Math.min(CREEP_MS_MAX, Math.max(creepMs, (2 * creepDist / CREEP_MAX_SPEED) * 1000));
+    var vJoin = (2 * creepDist) / (creepMs / 1000);
+
+    var mainMs = MAIN_MS_MIN + randInt(MAIN_MS_RANGE);
     var mainS = mainMs / 1000;
-    var creepS = creepMs / 1000;
-    var vJoin = (2 * creep) / creepS;
-    var mix = Math.min(1, (vJoin * mainS) / mainDist);
-    return function (ms) {
-      if (ms < mainMs) {
-        var s = ms / mainMs;
-        return {
-          x: mainDist * ((1 - mix) * (1 - Math.pow(1 - s, 4)) + mix * s),
-          v: (mainDist * ((1 - mix) * 4 * Math.pow(1 - s, 3) + mix)) / mainS
-        };
+    var p = MAIN_EASE_MIN + randFloat() * MAIN_EASE_RANGE;
+    var amp = Math.max(0, ((p + 1) * (creepFrom - vJoin * mainS)) / mainS);
+    // amp が 0 になる(盤がほぼ回らない)ことは turns >= 5 なので起きないが、念のため距離は vJoin 側で合わせる
+    var vConst = amp > 0 ? vJoin : creepFrom / mainS;
+
+    var parts = [{ t0: mainMs, t1: mainMs + creepMs, x0: creepFrom, x1: creepTo, v0: vJoin, v1: 0 }];
+    var t = mainMs + creepMs;
+    for (var i = 1; i < keys.length; i++) {
+      var t1 = t + keys[i][0];
+      parts.push({ t0: t, t1: t1, x0: xAt(keys[i - 1][1]), x1: xAt(keys[i][1]), v0: 0, v1: 0 });
+      t = t1;
+    }
+
+    return {
+      duration: t,
+      drama: drama,
+      curve: function (ms) {
+        if (ms < mainMs) {
+          var s = ms / mainMs;
+          return {
+            x: vConst * mainS * s + (amp * mainS * (1 - Math.pow(1 - s, p + 1))) / (p + 1),
+            v: vConst + amp * Math.pow(1 - s, p)
+          };
+        }
+        for (var j = 0; j < parts.length; j++) {
+          if (ms <= parts[j].t1) return hermite(parts[j], ms);
+        }
+        return { x: delta, v: 0 };
       }
-      var c = Math.min(1, (ms - mainMs) / creepMs);
-      return {
-        x: mainDist + creep * (1 - Math.pow(1 - c, 2)),
-        v: (2 * creep * (1 - c)) / creepS
-      };
     };
   }
 
@@ -883,11 +995,13 @@
   var kickAt = 0;
   var kickAmp = 0;
   var kickRunning = false;
+  var pointerBend = 0; // 境目の釘に押されている傾き(deg、右がマイナス)
 
-  // 境目に弾かれた時に呼ぶ。speed: 盤の角速度(rad/s)
+  // 境目に弾かれた時に呼ぶ。speed: 盤の角速度(rad/s)。釘に押されて傾いていた時は、その傾きから弾け戻る
   function kickPointer(speed) {
     kickAt = performance.now();
-    kickAmp = KICK_DEG * Math.max(KICK_MIN_RATIO, Math.min(1, speed / KICK_FULL_SPEED));
+    kickAmp = Math.max(KICK_DEG * Math.max(KICK_MIN_RATIO, Math.min(1, speed / KICK_FULL_SPEED)), -pointerBend);
+    pointerBend = 0;
     if (!kickRunning) {
       kickRunning = true;
       requestAnimationFrame(animatePointer);
@@ -899,12 +1013,28 @@
     var dt = Math.max(0, now - kickAt);
     if (dt > KICK_DECAY_MS * 6) {
       kickRunning = false;
-      el.pointer.style.transform = "";
+      setPointerTransform(pointerBend);
       return;
     }
     var deg = -kickAmp * Math.exp(-dt / KICK_DECAY_MS) * Math.cos((dt / KICK_PERIOD_MS) * TWO_PI);
-    el.pointer.style.transform = "rotate(" + deg.toFixed(2) + "deg)";
+    setPointerTransform(deg + pointerBend);
     requestAnimationFrame(animatePointer);
+  }
+
+  function setPointerTransform(deg) {
+    el.pointer.style.transform = Math.abs(deg) < 0.01 ? "" : "rotate(" + deg.toFixed(2) + "deg)";
+  }
+
+  // 次の境目(釘)が針に触れていれば、押し込まれた分だけ針を右へ傾ける。速い時は傾けない
+  // 針の下の位置は項目の中の割合 o(盤が進むと 1 → 0 に減り、0 で次の項目へ)。o < z が触れている範囲
+  function bendPointer(n, speed) {
+    var seg = TWO_PI / n;
+    var q = normalize(-rotation) / seg;
+    var o = q - Math.floor(q);
+    var z = Math.min(CONTACT_DEG * Math.PI / 180, CONTACT_SEG * seg) / seg;
+    var slow = Math.max(0, 1 - Math.abs(speed) / CONTACT_SPEED);
+    pointerBend = o < z ? -CONTACT_BEND_DEG * (1 - o / z) * slow : 0;
+    if (!kickRunning) setPointerTransform(pointerBend);
   }
 
   function start() {
@@ -923,20 +1053,11 @@
     var n = state.entries.length;
     if (n === 0) return;
 
-    var seg = TWO_PI / n;
     var w = pickWinnerIndex();
-    var offset = 0.15 + randFloat() * 0.7; // 境界ギリギリに止めない
-    var target = -(w + offset) * seg;
-    var turns = 5 + randInt(3);
     var from = rotation;
-    var delta = turns * TWO_PI + normalize(target - from);
-    // じわじわ区間: 最後の境目(当たりの項目に入る境目)の少し手前から
-    var creep = Math.min(CREEP_MAX, (1 - offset) * seg +
-      Math.max(CREEP_LEAD_MIN, Math.min(CREEP_LEAD_SEG * seg, CREEP_LEAD_MAX)));
-    var mainMs = MAIN_MS_MIN + randInt(MAIN_MS_RANGE);
-    var creepMs = CREEP_MS_MIN + randInt(CREEP_MS_RANGE);
-    var duration = mainMs + creepMs;
-    var curve = makeSpinCurve(delta, creep, mainMs, creepMs);
+    var plan = planSpin(n, w, from);
+    var duration = plan.duration;
+    var curve = plan.curve;
     var winnerEntry = state.entries[w];
 
     spinning = true;
@@ -957,11 +1078,14 @@
         playTick();
         kickPointer(p.v);
       }
+      bendPointer(n, p.v);
       if (ms < duration) {
         requestAnimationFrame(frame);
       } else {
         rotation = normalize(rotation);
         drawWheel();
+        pointerBend = 0;
+        if (!kickRunning) setPointerTransform(0);
         onStop(winnerEntry);
       }
     }
@@ -1262,6 +1386,7 @@
     showTab: showTab,
     indexAtPointer: function () { return indexAtPointer(state.entries.length); },
     isSpinning: function () { return spinning; },
-    isShuffling: function () { return shuffling; }
+    isShuffling: function () { return shuffling; },
+    planSpin: planSpin
   };
 })();
