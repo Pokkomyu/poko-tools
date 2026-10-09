@@ -42,6 +42,12 @@
     </header>
 
     <div id="panelNames" class="tab-panel" data-tab="names">
+      <div class="sets">
+        <span class="sets-head">名前プリセット</span>
+        <span id="setCurrent" class="sets-current"></span>
+        <button id="setOpenBtn" class="btn-small" type="button">プリセット</button>
+      </div>
+
       <div class="control-body">
         <div class="entries">
           <div class="entries-head">
@@ -109,6 +115,15 @@
     </div>
 
     <footer id="version" class="version"></footer>
+
+    <!-- 確認・プリセット一覧の窓。操作パネルの中に重ねる(配信に映らないように。confirm() は OBS の対話で出ないため) -->
+    <div id="dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle" hidden>
+      <div class="dialog-box">
+        <h3 id="dialogTitle" class="dialog-title"></h3>
+        <div id="dialogBody" class="dialog-body"></div>
+        <div id="dialogButtons" class="dialog-buttons"></div>
+      </div>
+    </div>
   </section>
 </div>
 <script src="app.js"></script>

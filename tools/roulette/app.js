@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.4.4"; // tool.json と揃える
+  var VERSION = "1.0.0"; // tool.json と揃える
   var EDITION = "カラー版"; // 有償版(edition/plus ブランチ)。無料版には無い
   var STORAGE_KEY = "poko-tools.roulette.v1";
   var STAGE_W = 1920;
@@ -88,6 +88,9 @@
   var COLORS = PRESETS[0].colors; // 盤の6色は colors["wheel-N"] を使う(drawWheel 用に配列化する)
   var FONT = '"M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Meiryo", system-ui, sans-serif';
   var MAX_NAME_LENGTH = 40;
+  // 名前プリセット(2026-10-09 ぽこ要望「セットを10個ぐらい保存しておけるように」)
+  var SET_MAX = 10;
+  var SET_NAME_MAX = 20;
   // 針のプルプル: 項目の境目が針を通るたびに弾かれ、すぐ減衰する
   // 弾いた揺れは約0.5秒で減衰する。最後の境目を通ってから止まるまでは 0.5 秒以上あるので、止まる頃には収まっている
   var KICK_DEG = 5;
@@ -139,6 +142,8 @@
     spinCount: 0,
     lastWinnerId: null,
     theme: PRESETS[0].id,
+    sets: [],          // 名前プリセット {id, name, names: [名前]}
+    activeSetId: null, // 使用中のプリセット。名前を変えるとこのプリセットにも書き戻す
     customThemes: [], // {id, name, colors} 最大 MAX_CUSTOM 件
     options: { removeOnWin: false, noRepeat: false, shuffleEach: false, showCount: false, sound: true, fanfare: true, congrats: true }
   };
@@ -149,6 +154,8 @@
   var pendingRemovalId = null;
   var winnerTimer = null;
   var nextId = 1;
+  var nextSetId = 1;
+  var confirmedSetId = null; // 「プリセットが変更されます」で「変更する」を選んだプリセット(別のプリセットに切り替えるまで聞かない)
 
   function load() {
     try {
@@ -175,6 +182,13 @@
       state.entries.concat(state.removed).forEach(function (e) {
         if (e.id >= nextId) nextId = e.id + 1;
       });
+      state.sets = (Array.isArray(saved.sets) ? saved.sets : []).filter(function (t) {
+        return t && typeof t.id === "number" && typeof t.name === "string" && Array.isArray(t.names);
+      }).slice(0, SET_MAX).map(function (t) {
+        return { id: t.id, name: t.name, names: t.names.filter(function (x) { return typeof x === "string"; }) };
+      });
+      state.sets.forEach(function (t) { if (t.id >= nextSetId) nextSetId = t.id + 1; });
+      state.activeSetId = setById(saved.activeSetId) ? saved.activeSetId : null;
     } catch (e) {
       // 保存データが壊れていても初期状態で起動する
     }
@@ -240,6 +254,12 @@
     hueCanvas: $("hueCanvas"),
     rgb: [$("rgbR"), $("rgbG"), $("rgbB")],
     hexInput: $("hexInput"),
+    setCurrent: $("setCurrent"),
+    setOpenBtn: $("setOpenBtn"),
+    dialog: $("dialog"),
+    dialogTitle: $("dialogTitle"),
+    dialogBody: $("dialogBody"),
+    dialogButtons: $("dialogButtons"),
     opt: {
       removeOnWin: $("optRemoveOnWin"),
       noRepeat: $("optNoRepeat"),
@@ -1218,26 +1238,26 @@
       .map(function (s) { return s.trim().slice(0, MAX_NAME_LENGTH); })
       .filter(function (s) { return s.length > 0; });
     if (names.length === 0) return;
-    finishWinnerDisplay();
-    names.forEach(function (name) {
-      state.entries.push({ id: nextId++, name: name });
+    editEntries(function () {
+      finishWinnerDisplay();
+      names.forEach(function (name) {
+        state.entries.push({ id: nextId++, name: name });
+      });
+      el.addInput.value = "";
     });
-    el.addInput.value = "";
-    save();
-    render();
   }
 
   function removeEntry(id) {
-    if (spinning || shuffling) return;
-    finishWinnerDisplay();
-    var i = indexOfId(id);
-    if (i < 0) return;
-    state.entries.splice(i, 1);
-    save();
-    render();
+    if (spinning || shuffling || indexOfId(id) < 0) return;
+    editEntries(function () {
+      finishWinnerDisplay();
+      var i = indexOfId(id);
+      if (i >= 0) state.entries.splice(i, 1);
+    });
   }
 
   // 誤操作防止: 2回押しで全消去(OBSの対話ウィンドウでは confirm() が出ないため)
+  // プリセットを使用中なら使用を解除して消す(プリセットの中身は消さない)
   var clearArmTimer = null;
   function clearEntries() {
     if (spinning || shuffling) return;
@@ -1252,6 +1272,7 @@
     state.entries = [];
     state.removed = [];
     state.lastWinnerId = null;
+    state.activeSetId = null;
     save();
     render();
   }
@@ -1272,6 +1293,243 @@
     state.lastWinnerId = null;
     save();
     render();
+  }
+
+  // ---------- dialog ----------
+
+  // 確認・入力の窓。操作パネルの中に重ねる(confirm() / prompt() は OBS の対話ウィンドウで出ないため)
+  // buttons: [{label, cls, onClick, disabled, title}]。onClick が無いボタンは閉じるだけ
+  function openDialog(opt) {
+    el.dialogTitle.textContent = opt.title;
+    el.dialogBody.textContent = "";
+    if (opt.text) {
+      var p = document.createElement("p");
+      p.className = "dialog-text";
+      p.textContent = opt.text;
+      el.dialogBody.appendChild(p);
+    }
+    if (opt.body) el.dialogBody.appendChild(opt.body);
+    el.dialogButtons.textContent = "";
+    (opt.buttons || []).forEach(function (b) {
+      el.dialogButtons.appendChild(smallButton(b.label, b.cls, b.onClick || closeDialog, b.disabled, b.title));
+    });
+    el.dialog.hidden = false;
+    var focus = el.dialog.querySelector("input") || el.dialogButtons.querySelector(".primary:not(:disabled)");
+    if (focus) focus.focus();
+  }
+
+  function closeDialog() {
+    el.dialog.hidden = true;
+    el.dialogBody.textContent = "";
+    el.dialogButtons.textContent = "";
+  }
+
+  function smallButton(label, cls, onClick, disabled, title) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn-small" + (cls ? " " + cls : "");
+    b.textContent = label;
+    b.disabled = !!disabled;
+    if (title) b.title = title;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  // ---------- name presets ----------
+
+  function setById(id) {
+    for (var i = 0; i < state.sets.length; i++) if (state.sets[i].id === id) return state.sets[i];
+    return null;
+  }
+
+  // 今の名前(「当たったら消す」で外れている人も含む)を追加した順で
+  function currentNames() {
+    return state.entries.concat(state.removed).slice()
+      .sort(function (a, b) { return a.id - b.id; })
+      .map(function (e) { return e.name; });
+  }
+
+  function setsFull() { return state.sets.length >= SET_MAX; }
+
+  function addSet(name, names) {
+    var t = { id: nextSetId++, name: name.slice(0, SET_NAME_MAX), names: names };
+    state.sets.push(t);
+    return t;
+  }
+
+  function defaultSetName() {
+    for (var k = 1; ; k++) {
+      var name = "プリセット" + k;
+      if (!state.sets.some(function (t) { return t.name === name; })) return name;
+    }
+  }
+
+  // 名前の追加・削除。プリセットを使用中なら、プリセットも書き換わることを一度確認する(2026-10-09 ぽこ要望)
+  // 「コピーして新規登録」は元のプリセットを残し、コピーを使用中にしてからそちらを変更する
+  function editEntries(apply) {
+    var t = setById(state.activeSetId);
+    function commit() {
+      closeDialog();
+      apply();
+      t = setById(state.activeSetId);
+      if (t) t.names = currentNames();
+      save();
+      render();
+    }
+    if (!t || confirmedSetId === t.id) { commit(); return; }
+    openDialog({
+      title: "プリセット「" + t.name + "」が変更されます",
+      text: "このまま変更すると、保存してあるプリセットの名前も変わります。元のプリセットを残したい時は「コピーして新規登録」を選んでね。",
+      buttons: [
+        { label: "コピーして新規登録", cls: "primary", disabled: setsFull(),
+          title: setsFull() ? "プリセットは " + SET_MAX + " 個までです" : "",
+          onClick: function () {
+            var c = addSet(t.name + "のコピー", t.names.slice());
+            state.activeSetId = c.id;
+            confirmedSetId = c.id;
+            commit();
+          } },
+        { label: "変更する", onClick: function () { confirmedSetId = t.id; commit(); } },
+        { label: "やめる" }
+      ]
+    });
+  }
+
+  function loadSet(t) {
+    closeDialog();
+    finishWinnerDisplay();
+    state.entries = t.names.map(function (name) { return { id: nextId++, name: name }; });
+    state.removed = [];
+    state.lastWinnerId = null;
+    state.activeSetId = t.id;
+    confirmedSetId = null;
+    save();
+    render();
+  }
+
+  // プリセットに切り替える。今の名前がどのプリセットにも入っていなければ、消える前に確認する
+  function useSet(id) {
+    var t = setById(id);
+    if (!t || spinning || shuffling) return;
+    var n = state.entries.length + state.removed.length;
+    if (state.activeSetId !== null || n === 0) { loadSet(t); return; }
+    openDialog({
+      title: "今の名前はプリセットに入っていません",
+      text: "「" + t.name + "」に切り替えると、今の名前(" + n + "人)は消えます。",
+      buttons: [
+        { label: "保存してから切り替え", cls: "primary", disabled: setsFull(),
+          title: setsFull() ? "プリセットは " + SET_MAX + " 個までです" : "",
+          onClick: function () { addSet(defaultSetName(), currentNames()); loadSet(t); } },
+        { label: "切り替える", onClick: function () { loadSet(t); } },
+        { label: "やめる", onClick: openSetList }
+      ]
+    });
+  }
+
+  // 今の名前を新しいプリセットとして保存し、使用中にする。続けて名前を付ける
+  function saveAsSet() {
+    if (setsFull() || spinning || shuffling) return;
+    var t = addSet(defaultSetName(), currentNames());
+    state.activeSetId = t.id;
+    confirmedSetId = null;
+    save();
+    render();
+    renameSet(t.id);
+  }
+
+  function renameSet(id) {
+    var t = setById(id);
+    if (!t) return;
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "dialog-input";
+    input.maxLength = SET_NAME_MAX;
+    input.value = t.name;
+    function ok() {
+      var name = input.value.trim().slice(0, SET_NAME_MAX);
+      if (name) t.name = name;
+      save();
+      render();
+      openSetList();
+    }
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); ok(); }
+    });
+    var wrap = document.createElement("div");
+    wrap.appendChild(input);
+    var hint = document.createElement("p");
+    hint.className = "dialog-hint";
+    hint.textContent = "OBSの対話では日本語が打てないので、メモ帳などで書いて Ctrl+V で貼り付けてね(" + SET_NAME_MAX + "文字まで)";
+    wrap.appendChild(hint);
+    openDialog({
+      title: "プリセットの名前",
+      body: wrap,
+      buttons: [{ label: "決定", cls: "primary", onClick: ok }, { label: "やめる", onClick: openSetList }]
+    });
+    input.select();
+  }
+
+  function deleteSet(id) {
+    var t = setById(id);
+    if (!t) return;
+    openDialog({
+      title: "プリセット「" + t.name + "」を削除しますか?",
+      text: "削除したプリセットは元に戻せません。" + (t.id === state.activeSetId ? "ルーレットの名前はそのまま残ります。" : ""),
+      buttons: [
+        { label: "削除する", cls: "danger", onClick: function () {
+          state.sets = state.sets.filter(function (x) { return x.id !== id; });
+          if (state.activeSetId === id) state.activeSetId = null;
+          save();
+          render();
+          openSetList();
+        } },
+        { label: "やめる", onClick: openSetList }
+      ]
+    });
+  }
+
+  function openSetList() {
+    if (spinning || shuffling) return;
+    var list = document.createElement("ol");
+    list.className = "set-list";
+    state.sets.forEach(function (t) {
+      var li = document.createElement("li");
+      var active = t.id === state.activeSetId;
+      if (active) li.className = "active";
+      var name = document.createElement("span");
+      name.className = "set-name";
+      name.textContent = t.name;
+      name.title = t.name;
+      var count = document.createElement("span");
+      count.className = "set-count";
+      count.textContent = active ? "使用中・" + t.names.length + "人" : t.names.length + "人";
+      li.appendChild(name);
+      li.appendChild(count);
+      li.appendChild(smallButton("使う", "primary", function () { useSet(t.id); }, active));
+      li.appendChild(smallButton("名前", "", function () { renameSet(t.id); }));
+      li.appendChild(smallButton("削除", "", function () { deleteSet(t.id); }));
+      list.appendChild(li);
+    });
+    if (state.sets.length === 0) {
+      var empty = document.createElement("li");
+      empty.className = "empty";
+      empty.textContent = "まだプリセットがないよ。名前を入れて「今の名前を保存」で作れます";
+      list.appendChild(empty);
+    }
+    var none = state.entries.length + state.removed.length === 0;
+    openDialog({
+      title: "名前プリセット(" + state.sets.length + " / " + SET_MAX + ")",
+      body: list,
+      buttons: [
+        { label: "今の名前を保存", cls: "primary", onClick: saveAsSet, disabled: setsFull() || none,
+          title: setsFull() ? "プリセットは " + SET_MAX + " 個までです。いらないものを削除してね" : none ? "先に名前を入れてね" : "" },
+        state.activeSetId !== null
+          ? { label: "使用をやめる", title: "名前はそのまま残し、プリセットへの書き戻しをやめる",
+              onClick: function () { state.activeSetId = null; save(); render(); openSetList(); } }
+          : null,
+        { label: "閉じる" }
+      ].filter(Boolean)
+    });
   }
 
   // ---------- render ----------
@@ -1337,6 +1595,11 @@
     el.resetBtn.disabled = spinning || shuffling;
     el.clearEntries.disabled = spinning || shuffling || (n === 0 && state.removed.length === 0);
     el.shuffleBtn.disabled = spinning || shuffling || n < 2;
+    var active = setById(state.activeSetId);
+    el.setCurrent.textContent = active ? active.name : "使っていません";
+    el.setCurrent.title = active ? active.name : "";
+    el.setCurrent.classList.toggle("none", !active);
+    el.setOpenBtn.disabled = spinning || shuffling;
     el.wheelArea.classList.toggle("spinning", spinning);
 
     if (!spinning) drawWheel();
@@ -1349,6 +1612,11 @@
   el.addBtn.addEventListener("click", addFromInput);
   el.clearEntries.addEventListener("click", clearEntries);
   el.shuffleBtn.addEventListener("click", function () { shuffleEntries(); });
+  el.setOpenBtn.addEventListener("click", openSetList);
+  el.dialog.addEventListener("click", function (ev) { if (ev.target === el.dialog) closeDialog(); });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !el.dialog.hidden) closeDialog();
+  });
   el.addInput.addEventListener("keydown", function (ev) {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
       ev.preventDefault();
