@@ -240,6 +240,22 @@ body.preview { background: var(--c-preview-bg); }
 .tab.active { background: var(--poko-pink); }
 .tab-panel { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 
+/* 名前プリセット */
+.sets { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 18px; }
+.sets-head { flex: none; }
+.sets-current {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 12px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 10px;
+  background: var(--poko-yellow);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sets-current.none { background: var(--poko-white); opacity: .6; font-weight: 700; }
+
 .control-body { flex: 1; display: flex; gap: 18px; min-height: 0; }
 
 .entries { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -431,11 +447,70 @@ body.preview { background: var(--c-preview-bg); }
 .btn:disabled,
 .btn-small:disabled { opacity: .45; cursor: not-allowed; }
 
-.btn-small { padding: 2px 12px; border-width: 3px; border-radius: 10px; font-size: 16px; background: var(--poko-white); box-shadow: 0 3px 0 var(--poko-ink); }
+.btn-small { white-space: nowrap; padding: 2px 12px; border-width: 3px; border-radius: 10px; font-size: 16px; background: var(--poko-white); box-shadow: 0 3px 0 var(--poko-ink); }
+.btn-small.primary { background: var(--poko-pink); }
+.btn-small.danger { background: var(--poko-red); color: var(--poko-white); }
 .btn-small.armed { background: var(--poko-red); color: var(--poko-white); }
 .btn-add { width: 130px; background: var(--poko-yellow); font-size: 28px; }
 .btn-start { flex: 2; height: 96px; background: var(--poko-pink); font-size: 44px; letter-spacing: .08em; }
 .btn-reset { flex: 1; height: 96px; background: var(--poko-white); font-size: 28px; }
+
+/* 確認・プリセット一覧の窓。操作パネルの上に重ねる(配信に映る領域には出さない) */
+.dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border-radius: 18px;
+  background: rgba(59, 43, 69, .45);
+}
+.dialog-box {
+  width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 4px solid var(--poko-ink);
+  border-radius: 18px;
+  background: #fff7fc;
+  box-shadow: 0 6px 0 var(--poko-ink);
+}
+.dialog-title { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+.dialog-body { min-height: 0; overflow-y: auto; }
+.dialog-text { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.6; }
+.dialog-hint { margin: 6px 0 0; font-size: 14px; font-weight: 700; opacity: .7; }
+.dialog-input {
+  width: 100%;
+  padding: 6px 12px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 12px;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 700;
+}
+.dialog-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.dialog-buttons .btn-small { padding: 6px 16px; font-size: 18px; }
+
+.set-list { margin: 0; padding: 0; list-style: none; counter-reset: set; }
+.set-list li {
+  counter-increment: set;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 3px dotted rgba(59, 43, 69, .25);
+  font-size: 18px;
+}
+.set-list li::before { content: counter(set); min-width: 1.4em; text-align: right; color: var(--poko-pink-deep); }
+.set-list li.active { background: #fff3b8; border-radius: 10px; }
+.set-list .set-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-list .set-count { flex: none; font-size: 15px; opacity: .7; }
+.set-list .empty { font-size: 16px; opacity: .6; }
+.set-list .empty::before { content: none; }
 
 .version { text-align: right; font-size: 14px; font-weight: 700; opacity: .5; margin-top: -8px; }
 
@@ -483,6 +558,15 @@ html.mobile .control {
   font-size: 16px;
 }
 html.mobile .control-head { font-size: 18px; }
+html.mobile .sets { font-size: 16px; }
+/* スマホでは操作パネルが縦に長いので、窓は画面に固定して出す(OBS 内ではスマホ表示にならない) */
+html.mobile .dialog { position: fixed; padding: 12px; border-radius: 0; }
+html.mobile .dialog-title { font-size: 18px; }
+html.mobile .dialog-text, html.mobile .set-list li, html.mobile .dialog-buttons .btn-small { font-size: 16px; }
+html.mobile .dialog-input { font-size: 16px; }
+html.mobile .set-list li { flex-wrap: wrap; }
+html.mobile .set-list .set-name { flex: 1 1 calc(100% - 8em); }
+html.mobile .set-list li .btn-small:first-of-type { margin-left: 2em; }
 html.mobile .control-note { display: none; }
 html.mobile .actions { order: -1; gap: 10px; }
 html.mobile .btn-start { height: 64px; font-size: 30px; }
