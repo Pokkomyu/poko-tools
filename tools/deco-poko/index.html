@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デコポコ</title>
+<style>
+  :root {
+    --panel: rgba(28, 22, 34, 0.92);
+    --panel-edge: rgba(255, 255, 255, 0.08);
+    --ink: #f3eef7;
+    --ink-dim: #a99bb5;
+    --accent: #ff7fb3;
+    --accent-soft: rgba(255, 127, 179, 0.18);
+    --radius: 14px;
+    --font: "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: transparent;
+    font-family: var(--font);
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #view {
+    position: fixed; inset: 0; display: block;
+    cursor: none;
+  }
+  #cursor {
+    position: fixed; left: 0; top: 0; width: 20px; height: 20px;
+    border: 1.5px solid #fff; border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.6);
+    pointer-events: none; transform: translate(-50%, -50%);
+    display: none;
+  }
+  #ui.hidden { display: none; }
+  /* OBS の外で開いた時だけ、透過部分が分かるように市松模様を出す(?bg=transparent で消せる) */
+  body.preview { background: repeating-conic-gradient(#8a8a8a 0 25%, #a8a8a8 0 50%) 0 0 / 24px 24px; }
+
+  /* floating button */
+  #fab {
+    position: fixed; width: 46px; height: 46px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    display: grid; place-items: center; cursor: grab; z-index: 10;
+    color: var(--ink);
+  }
+  #fab:active { cursor: grabbing; }
+  #fab .dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff;
+    transition: transform .15s;
+  }
+  #fab.open .dot { transform: scale(.6); }
+
+  /* panel */
+  #panel {
+    position: fixed; width: 250px; padding: 12px; z-index: 9;
+    background: var(--panel); border: 1px solid var(--panel-edge);
+    border-radius: var(--radius); color: var(--ink);
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+    backdrop-filter: blur(8px);
+    font-size: 12px; line-height: 1.4;
+  }
+  #panel.closed { display: none; }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .row:last-child { margin-bottom: 0; }
+  .row label { color: var(--ink-dim); min-width: 46px; }
+  .seg { display: flex; gap: 4px; flex: 1; }
+  .seg button, .btn {
+    flex: 1; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--panel-edge);
+    background: rgba(255,255,255,.04); color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .seg button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .btn:hover, .seg button:hover { background: rgba(255,255,255,.1); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  input[type=range] { flex: 1; accent-color: var(--accent); margin: 0; }
+  .val { width: 30px; text-align: right; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .well {
+    width: 30px; height: 26px; padding: 0; border: 1px solid var(--panel-edge);
+    border-radius: 6px; cursor: pointer; flex: none;
+    box-shadow: inset 0 0 0 2px rgba(0,0,0,.25);
+  }
+  .well.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* in-panel color picker (native <input type=color> の popup は OBS の対話ウィンドウで当てにならない) */
+  #picker { margin: 0 0 8px; padding: 8px; border-radius: 10px; background: rgba(0,0,0,.25); }
+  #picker.closed { display: none; }
+  #picker .title { color: var(--ink-dim); margin-bottom: 6px; }
+  #sv, #hue { display: block; width: 100%; border-radius: 6px; cursor: crosshair; touch-action: none; }
+  #sv { height: 110px; margin-bottom: 6px; }
+  #hue { height: 14px; margin-bottom: 8px; }
+  #hex {
+    flex: 1; min-width: 0; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--panel-edge);
+    background: rgba(255,255,255,.06); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums;
+    user-select: text; -webkit-user-select: text;
+  }
+  #hex.bad { border-color: #ff4d4d; }
+  .swatches { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+  .sw {
+    width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.5);
+    cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+  }
+  .sw.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .layers { display: flex; gap: 4px; flex: 1; }
+  .layer {
+    flex: 1; display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+    border-radius: 8px; border: 1px solid var(--panel-edge); cursor: pointer;
+    background: rgba(255,255,255,.04);
+  }
+  .layer.on { background: var(--accent-soft); border-color: var(--accent); }
+  .layer .eye {
+    width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--ink-dim);
+    flex: none;
+  }
+  .layer.visible .eye { background: var(--ink); border-color: var(--ink); }
+  .hint { color: var(--ink-dim); font-size: 10px; text-align: center; margin-top: 4px; }
+  .sep { height: 1px; background: var(--panel-edge); margin: 10px -12px; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="cursor"></div>
+
+<div id="ui">
+  <div id="fab" title="ドラッグで移動 / クリックで開閉"><div class="dot"></div></div>
+  <div id="panel" class="closed">
+    <div class="row">
+      <label>ツール</label>
+      <div class="seg" id="tools">
+        <button data-tool="brush">ペン</button>
+        <button data-tool="outline">縁取り</button>
+        <button data-tool="eraser">消しゴム</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>太さ</label>
+      <input type="range" id="size" min="1" max="80" value="8">
+      <span class="val" id="sizeVal">8</span>
+    </div>
+    <div class="row">
+      <label>不透明</label>
+      <input type="range" id="alpha" min="5" max="100" value="100">
+      <span class="val" id="alphaVal">100</span>
+    </div>
+    <div class="row">
+      <label>色</label>
+      <button class="well" id="colorWell" title="ペンの色を選ぶ"></button>
+      <div class="swatches" id="presets"></div>
+    </div>
+    <div class="row">
+      <label>履歴</label>
+      <div class="swatches" id="history" title="描いた色が入ります / 右クリックで削除"></div>
+    </div>
+    <div class="row">
+      <label>フチ色</label>
+      <div class="seg" id="oedge" title="縁取りのフチの色。自動はペンが明るいと黒、暗いと白">
+        <button data-edge="auto">自動</button>
+        <button data-edge="white">白</button>
+        <button data-edge="black">黒</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>フチ幅</label>
+      <input type="range" id="osize" min="1" max="30" value="4" title="縁取りのフチの太さ">
+      <span class="val" id="osizeVal">4</span>
+    </div>
+    <div id="picker" class="closed">
+      <div class="title" id="pickerTitle">ペンの色</div>
+      <canvas id="sv" width="226" height="110"></canvas>
+      <canvas id="hue" width="226" height="14"></canvas>
+      <div class="row">
+        <input id="hex" maxlength="7" spellcheck="false" autocomplete="off">
+        <button class="btn" id="pickerClose" style="flex:none;padding:6px 10px">閉じる</button>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="row">
+      <label>レイヤー</label>
+      <div class="layers" id="layers"></div>
+    </div>
+    <div class="row">
+      <button class="btn" id="undo">戻す</button>
+      <button class="btn" id="redo">やり直す</button>
+      <button class="btn" id="clearLayer">このレイヤーを消す</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="clearAll">全部消す</button>
+      <button class="btn" id="hideUi">UIを隠す (Tab)</button>
+    </div>
+    <div class="hint">Tab でUIを隠す/出す ・ 履歴は右クリックで削除 ・ v<span id="ver"></span></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const VERSION = '0.1.0'; // tools/deco-poko/tool.json と揃える
+  // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
+  // 複数置くときは ?id=xxx を付けて保存先を分ける
+  const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
+  const LS_KEY = 'poko-deco-poko-v1' + (BOARD_ID ? ':' + BOARD_ID : '');
+  const LAYER_COUNT = 3;
+  const UNDO_MAX = 20;
+  const PRESETS = ['#ffffff', '#000000', '#ff7fb3', '#ff4d4d', '#ffcc33', '#5ad66b', '#4aa3ff', '#b57bff'];
+
+  const view = document.getElementById('view');
+  const vctx = view.getContext('2d');
+  const cursorEl = document.getElementById('cursor');
+  const ui = document.getElementById('ui');
+  const fab = document.getElementById('fab');
+  const panel = document.getElementById('panel');
+
+  let W = 0, H = 0;
+
+  // ---------- state ----------
+  const state = {
+    tool: 'brush',
+    size: 8,
+    alpha: 1,
+    color: '#ff7fb3',
+    oedge: 'auto', // 'auto' | 'white' | 'black'
+    osize: 4,
+    active: 0,
+    visible: [true, true, true],
+    history: [],
+    fab: null,
+    uiHidden: false,
+    panelOpen: false,
+  };
+
+  // each layer = { ink, outline } canvases (outline rendered beneath ink)
+  const layers = [];
+  const makeCanvas = () => {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, W); c.height = Math.max(1, H);
+    return c;
+  };
+  for (let i = 0; i < LAYER_COUNT; i++) layers.push({ ink: null, outline: null });
+
+  const temp = { ink: null, outline: null }; // live stroke preview
+
+  function resize() {
+    const nw = window.innerWidth, nh = window.innerHeight;
+    if (nw === W && nh === H) return;
+    const ow = W, oh = H;
+    W = nw; H = nh;
+    view.width = W; view.height = H;
+    const grow = (old) => {
+      const c = makeCanvas();
+      if (old && ow && oh) c.getContext('2d').drawImage(old, 0, 0);
+      return c;
+    };
+    for (const L of layers) { L.ink = grow(L.ink); L.outline = grow(L.outline); }
+    temp.ink = grow(null); temp.outline = grow(null);
+    render();
+  }
+
+  // ---------- rendering ----------
+  let raf = 0;
+  function render() {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      vctx.clearRect(0, 0, W, H);
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        if (!state.visible[i]) continue;
+        vctx.drawImage(layers[i].outline, 0, 0);
+        vctx.drawImage(layers[i].ink, 0, 0);
+        if (i === state.active && stroke) {
+          vctx.drawImage(temp.outline, 0, 0);
+          vctx.drawImage(temp.ink, 0, 0);
+        }
+      }
+    });
+  }
+
+  // ---------- undo ----------
+  const undoStack = [], redoStack = [];
+  function snapshot(indices) {
+    return indices.map(i => ({
+      i,
+      ink: layers[i].ink.toDataURL(),
+      outline: layers[i].outline.toDataURL(),
+    }));
+  }
+  function pushUndo(indices) {
+    undoStack.push(snapshot(indices));
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack.length = 0;
+    updateButtons();
+  }
+  function restore(snap) {
+    return Promise.all(snap.map(s => Promise.all([
+      loadInto(layers[s.i].ink, s.ink),
+      loadInto(layers[s.i].outline, s.outline),
+    ]))).then(() => { render(); save(); });
+  }
+  function loadInto(canvas, url) {
+    return new Promise(res => {
+      const img = new Image();
+      img.onload = () => {
+        const c = canvas.getContext('2d');
+        c.clearRect(0, 0, canvas.width, canvas.height);
+        c.drawImage(img, 0, 0);
+        res();
+      };
+      img.onerror = () => res();
+      img.src = url;
+    });
+  }
+  function undo() {
+    const snap = undoStack.pop();
+    if (!snap) return;
+    redoStack.push(snapshot(snap.map(s => s.i)));
+    restore(snap); updateButtons();
+  }
+  function redo() {
+    const snap = redoStack.pop();
+    if (!snap) return;
+    undoStack.push(snapshot(snap.map(s => s.i)));
+    restore(snap); updateButtons();
+  }
+  function updateButtons() {
+    document.getElementById('undo').disabled = undoStack.length === 0;
+    document.getElementById('redo').disabled = redoStack.length === 0;
+  }
+
+  // ---------- drawing ----------
+  let stroke = null; // { pts: [] }
+
+  function drawPath(ctx, pts, width, color, alpha, composite) {
+    ctx.save();
+    ctx.globalCompositeOperation = composite || 'source-over';
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (pts.length === 1) {
+      ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, width / 2, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i - 1], q = pts[i];
+        const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+        ctx.quadraticCurveTo(p.x, p.y, mx, my);
+      }
+      const last = pts[pts.length - 1];
+      ctx.lineTo(last.x, last.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function paintStroke(target, pts) {
+    const ink = target.ink.getContext('2d');
+    const out = target.outline.getContext('2d');
+    if (state.tool === 'brush') {
+      drawPath(ink, pts, state.size, state.color, state.alpha);
+    } else if (state.tool === 'outline') {
+      drawPath(out, pts, state.size + state.osize * 2, edgeColor(), 1);
+      drawPath(ink, pts, state.size, state.color, state.alpha);
+    } else if (state.tool === 'eraser') {
+      drawPath(ink, pts, state.size, '#000', 1, 'destination-out');
+      drawPath(out, pts, state.size, '#000', 1, 'destination-out');
+    }
+  }
+
+  function clearTemp() {
+    temp.ink.getContext('2d').clearRect(0, 0, W, H);
+    temp.outline.getContext('2d').clearRect(0, 0, W, H);
+  }
+
+  view.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    if (!state.visible[state.active]) return;
+    view.setPointerCapture(e.pointerId);
+    pushUndo([state.active]);
+    stroke = { pts: [{ x: e.clientX, y: e.clientY }] };
+    if (state.tool === 'eraser') {
+      paintStroke(layers[state.active], stroke.pts);
+    } else {
+      clearTemp(); paintStroke(temp, stroke.pts);
+    }
+    render();
+  });
+  view.addEventListener('pointermove', e => {
+    moveCursor(e);
+    if (!stroke) return;
+    let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    if (!evs.length) evs = [e];
+    for (const ev of evs) stroke.pts.push({ x: ev.clientX, y: ev.clientY });
+    if (state.tool === 'eraser') {
+      // eraser is incremental on the layer itself (destination-out does not stack visibly)
+      const tail = stroke.pts.slice(-Math.min(stroke.pts.length, evs.length + 2));
+      paintStroke(layers[state.active], tail);
+    } else {
+      clearTemp(); paintStroke(temp, stroke.pts);
+    }
+    render();
+  });
+  const endStroke = e => {
+    if (!stroke) return;
+    if (state.tool !== 'eraser') {
+      paintStroke(layers[state.active], stroke.pts);
+      clearTemp();
+      pushColorHistory(state.color); // 実際に描いた色だけが履歴に入る
+    }
+    stroke = null;
+    render(); save();
+  };
+  view.addEventListener('pointerup', endStroke);
+  view.addEventListener('pointercancel', endStroke);
+  view.addEventListener('pointerleave', () => { cursorEl.style.display = 'none'; });
+  view.addEventListener('pointerenter', () => { cursorEl.style.display = 'block'; });
+
+  function moveCursor(e) {
+    cursorEl.style.display = 'block';
+    cursorEl.style.left = e.clientX + 'px';
+    cursorEl.style.top = e.clientY + 'px';
+  }
+  function updateCursorSize() {
+    const d = state.tool === 'outline' ? state.size + state.osize * 2 : state.size;
+    cursorEl.style.width = d + 'px'; cursorEl.style.height = d + 'px';
+  }
+
+  // ---------- UI ----------
+  const $ = id => document.getElementById(id);
+  const toolsEl = $('tools');
+  toolsEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    setTool(b.dataset.tool);
+  });
+  function setTool(t) {
+    state.tool = t;
+    for (const b of toolsEl.children) b.classList.toggle('on', b.dataset.tool === t);
+    updateCursorSize(); save();
+  }
+  const bindRange = (id, valId, key, scale) => {
+    const el = $(id);
+    el.addEventListener('input', () => {
+      state[key] = +el.value * scale;
+      $(valId).textContent = el.value;
+      updateCursorSize(); save();
+    });
+  };
+  bindRange('size', 'sizeVal', 'size', 1);
+  bindRange('alpha', 'alphaVal', 'alpha', 0.01);
+  bindRange('osize', 'osizeVal', 'osize', 1);
+  // ---------- colors ----------
+  const isHex = c => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c);
+  const hexToRgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const rgbToHex = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  // 目で区別しにくいほど近い色は同じ色として扱う(ピッカーの微調整で似た色が並ぶのを防ぐ)
+  const near = (a, b) => {
+    const p = hexToRgb(a), q = hexToRgb(b);
+    return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 24;
+  };
+  function hsvToHex(h, s, v) {
+    const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return rgbToHex([f(5) * 255, f(3) * 255, f(1) * 255]);
+  }
+  function hexToHsv(c) {
+    const [r, g, b] = hexToRgb(c).map(v => v / 255);
+    const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+    let h = 0;
+    if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return { h: (h * 60 + 360) % 360, s: max ? d / max : 0, v: max };
+  }
+
+  function setColor(c) {
+    state.color = c;
+    refreshSwatches(); save();
+  }
+  // 自動: ペンが明るければ黒、暗ければ白(白ペン+白フチで太い白線になるのを防ぐ)
+  function edgeColor() {
+    if (state.oedge === 'white') return '#ffffff';
+    if (state.oedge === 'black') return '#000000';
+    // 相対輝度(sRGB を線形に戻して計算)。ピンク #ff7fb3 は白フチ、黄 #ffcc33 は黒フチ
+    const [r, g, b] = hexToRgb(state.color).map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? '#000000' : '#ffffff';
+  }
+  const oedgeEl = $('oedge');
+  oedgeEl.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    setEdge(b.dataset.edge);
+  });
+  function setEdge(v) {
+    state.oedge = v;
+    for (const b of oedgeEl.children) b.classList.toggle('on', b.dataset.edge === v);
+    save();
+  }
+
+  function swatch(color, parent, removable) {
+    const d = document.createElement('div');
+    d.className = 'sw'; d.style.background = color; d.dataset.color = color;
+    d.addEventListener('click', () => { setColor(color); syncPicker(); });
+    if (removable) d.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      state.history = state.history.filter(x => x !== color);
+      refreshSwatches(); save();
+    });
+    parent.appendChild(d);
+  }
+  function refreshSwatches() {
+    const p = $('presets'), h = $('history');
+    p.innerHTML = ''; h.innerHTML = '';
+    PRESETS.forEach(c => swatch(c, p, false));
+    state.history.forEach(c => swatch(c, h, true));
+    for (const s of document.querySelectorAll('.sw')) s.classList.toggle('on', s.dataset.color === state.color);
+    $('colorWell').style.background = state.color;
+  }
+  function pushColorHistory(c) {
+    if (!isHex(c) || PRESETS.includes(c)) return;
+    state.history = [c, ...state.history.filter(x => !near(x, c))].slice(0, 8);
+    refreshSwatches();
+  }
+
+  // in-panel picker(ペンの色)
+  const pickerEl = $('picker'), svEl = $('sv'), hueEl = $('hue'), hexEl = $('hex');
+  const picker = { target: null, h: 0, s: 0, v: 0 };
+  function openPicker(target) {
+    if (picker.target === target) return closePicker();
+    picker.target = target;
+    pickerEl.classList.remove('closed');
+    $('colorWell').classList.add('on');
+    syncPicker(); positionPanel();
+  }
+  function closePicker() {
+    picker.target = null;
+    pickerEl.classList.add('closed');
+    $('colorWell').classList.remove('on');
+    positionPanel();
+  }
+  function syncPicker() {
+    if (!picker.target) return;
+    const c = state[picker.target];
+    Object.assign(picker, hexToHsv(c));
+    hexEl.value = c; hexEl.classList.remove('bad');
+    drawPicker();
+  }
+  function drawPicker() {
+    const sc = svEl.getContext('2d'), sw = svEl.width, sh = svEl.height;
+    sc.fillStyle = hsvToHex(picker.h, 1, 1); sc.fillRect(0, 0, sw, sh);
+    let g = sc.createLinearGradient(0, 0, sw, 0);
+    g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    sc.fillStyle = g; sc.fillRect(0, 0, sw, sh);
+    g = sc.createLinearGradient(0, 0, 0, sh);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000');
+    sc.fillStyle = g; sc.fillRect(0, 0, sw, sh);
+    const x = picker.s * sw, y = (1 - picker.v) * sh;
+    sc.lineWidth = 2; sc.strokeStyle = picker.v > 0.5 ? '#000' : '#fff';
+    sc.beginPath(); sc.arc(x, y, 5, 0, Math.PI * 2); sc.stroke();
+
+    const hc = hueEl.getContext('2d'), hw = hueEl.width, hh = hueEl.height;
+    g = hc.createLinearGradient(0, 0, hw, 0);
+    for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, hsvToHex(i * 60 % 360, 1, 1));
+    hc.fillStyle = g; hc.fillRect(0, 0, hw, hh);
+    const hx = picker.h / 360 * hw;
+    hc.fillStyle = '#fff'; hc.fillRect(hx - 2, 0, 4, hh);
+    hc.strokeStyle = '#000'; hc.lineWidth = 1; hc.strokeRect(hx - 2.5, 0.5, 5, hh - 1);
+  }
+  function applyPicker() {
+    const c = hsvToHex(picker.h, picker.s, picker.v);
+    hexEl.value = c; hexEl.classList.remove('bad');
+    setColor(c);
+    drawPicker();
+  }
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  function dragOn(el, fn) {
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      el.setPointerCapture(e.pointerId); fn(e);
+      const mv = ev => fn(ev);
+      const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    });
+  }
+  dragOn(svEl, e => {
+    const r = svEl.getBoundingClientRect();
+    picker.s = clamp01((e.clientX - r.left) / r.width);
+    picker.v = 1 - clamp01((e.clientY - r.top) / r.height);
+    applyPicker();
+  });
+  dragOn(hueEl, e => {
+    const r = hueEl.getBoundingClientRect();
+    picker.h = clamp01((e.clientX - r.left) / r.width) * 359.9;
+    applyPicker();
+  });
+  hexEl.addEventListener('input', () => {
+    let v = hexEl.value.trim().toLowerCase();
+    if (v && v[0] !== '#') v = '#' + v;
+    if (!isHex(v)) { hexEl.classList.add('bad'); return; }
+    hexEl.classList.remove('bad');
+    Object.assign(picker, hexToHsv(v));
+    setColor(v);
+    drawPicker();
+  });
+  $('colorWell').addEventListener('click', () => openPicker('color'));
+  $('pickerClose').addEventListener('click', closePicker);
+
+  const layersEl = $('layers');
+  function refreshLayers() {
+    layersEl.innerHTML = '';
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const d = document.createElement('div');
+      d.className = 'layer' + (i === state.active ? ' on' : '') + (state.visible[i] ? ' visible' : '');
+      const eye = document.createElement('span'); eye.className = 'eye'; eye.title = '表示/非表示';
+      eye.addEventListener('click', ev => { ev.stopPropagation(); state.visible[i] = !state.visible[i]; refreshLayers(); render(); save(); });
+      const name = document.createElement('span'); name.textContent = i + 1;
+      d.append(eye, name);
+      d.addEventListener('click', () => { state.active = i; refreshLayers(); save(); });
+      layersEl.appendChild(d);
+    }
+  }
+
+  $('undo').addEventListener('click', undo);
+  $('redo').addEventListener('click', redo);
+  $('clearLayer').addEventListener('click', () => {
+    pushUndo([state.active]);
+    layers[state.active].ink.getContext('2d').clearRect(0, 0, W, H);
+    layers[state.active].outline.getContext('2d').clearRect(0, 0, W, H);
+    render(); save();
+  });
+  $('clearAll').addEventListener('click', () => {
+    pushUndo([0, 1, 2]);
+    for (const L of layers) {
+      L.ink.getContext('2d').clearRect(0, 0, W, H);
+      L.outline.getContext('2d').clearRect(0, 0, W, H);
+    }
+    render(); save();
+  });
+  $('hideUi').addEventListener('click', () => setUiHidden(true));
+
+  function setUiHidden(h) {
+    state.uiHidden = h;
+    ui.classList.toggle('hidden', h);
+    save();
+  }
+  function setPanelOpen(o) {
+    state.panelOpen = o;
+    panel.classList.toggle('closed', !o);
+    fab.classList.toggle('open', o);
+    positionPanel(); save();
+  }
+
+  // floating button: drag or click
+  let drag = null;
+  fab.addEventListener('pointerdown', e => {
+    fab.setPointerCapture(e.pointerId);
+    const r = fab.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false, sx: e.clientX, sy: e.clientY };
+  });
+  fab.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
+    if (drag.moved) placeFab(e.clientX - drag.dx, e.clientY - drag.dy);
+  });
+  fab.addEventListener('pointerup', e => {
+    if (!drag) return;
+    if (!drag.moved) setPanelOpen(!state.panelOpen); else save();
+    drag = null;
+  });
+  function placeFab(x, y) {
+    x = Math.max(4, Math.min(W - 50, x)); y = Math.max(4, Math.min(H - 50, y));
+    state.fab = { x, y };
+    fab.style.left = x + 'px'; fab.style.top = y + 'px';
+    positionPanel();
+  }
+  function positionPanel() {
+    if (!state.fab) return;
+    const pw = 250, ph = panel.offsetHeight || 330;
+    let x = state.fab.x + 54, y = state.fab.y;
+    if (x + pw > W - 4) x = state.fab.x - pw - 8;
+    if (y + ph > H - 4) y = Math.max(4, H - ph - 4);
+    panel.style.left = x + 'px'; panel.style.top = y + 'px';
+  }
+
+  // ---------- hotkeys ----------
+  // Tab(UI 表示切替)だけ。1 文字キーは OBS の対話中に誤爆しやすいので割り当てない。
+  // Ctrl+Z も付けない: OBS の対話では OBS 本体の「元に戻す」に吸われ、シーン編集まで戻ってしまう(2026-10-15 ぽこ確認)
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Tab') { e.preventDefault(); setUiHidden(!state.uiHidden); }
+  });
+
+  // ---------- persistence ----------
+  let saveTimer = 0;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        const data = {
+          settings: {
+            tool: state.tool, size: state.size, alpha: state.alpha, color: state.color,
+            oedge: state.oedge, osize: state.osize, active: state.active,
+            visible: state.visible, history: state.history, fab: state.fab,
+            uiHidden: state.uiHidden, panelOpen: state.panelOpen,
+          },
+          layers: layers.map(L => ({ ink: L.ink.toDataURL(), outline: L.outline.toDataURL() })),
+        };
+        localStorage.setItem(LS_KEY, JSON.stringify(data));
+      } catch (err) {
+        console.warn('save failed', err);
+      }
+    }, 300);
+  }
+  function load() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) {}
+    if (data && data.settings) {
+      const s = data.settings;
+      Object.assign(state, {
+        tool: s.tool || 'brush', size: s.size || 8, alpha: s.alpha ?? 1,
+        color: isHex(s.color) ? s.color : state.color,
+        oedge: ['auto', 'white', 'black'].includes(s.oedge) ? s.oedge : 'auto',
+        osize: s.osize || 4,
+        active: s.active || 0, visible: s.visible || [true, true, true],
+        history: Array.isArray(s.history) ? s.history.filter(isHex).slice(0, 8) : [], fab: s.fab || null,
+        uiHidden: !!s.uiHidden, panelOpen: !!s.panelOpen,
+      });
+    }
+    const promises = [];
+    if (data && data.layers) {
+      data.layers.forEach((L, i) => {
+        if (i >= LAYER_COUNT) return;
+        promises.push(loadInto(layers[i].ink, L.ink), loadInto(layers[i].outline, L.outline));
+      });
+    }
+    return Promise.all(promises);
+  }
+
+  function applySettingsToUi() {
+    $('size').value = state.size; $('sizeVal').textContent = state.size;
+    $('alpha').value = Math.round(state.alpha * 100); $('alphaVal').textContent = Math.round(state.alpha * 100);
+    $('osize').value = state.osize; $('osizeVal').textContent = state.osize;
+    setTool(state.tool); setEdge(state.oedge);
+    refreshSwatches(); refreshLayers(); updateButtons();
+    ui.classList.toggle('hidden', state.uiHidden);
+    placeFab(state.fab ? state.fab.x : W - 70, state.fab ? state.fab.y : H - 70);
+    setPanelOpen(state.panelOpen);
+  }
+
+  // ---------- init ----------
+  if (typeof window.obsstudio === 'undefined' && new URLSearchParams(location.search).get('bg') !== 'transparent') document.body.classList.add('preview');
+  $('ver').textContent = VERSION;
+  window.addEventListener('resize', () => { resize(); if (state.fab) placeFab(state.fab.x, state.fab.y); });
+  resize();
+  load().then(() => { applySettingsToUi(); render(); });
+})();
+</script>
+</body>
+</html>
