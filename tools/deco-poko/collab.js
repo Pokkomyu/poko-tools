@@ -6,9 +6,44 @@
   if (!board) return;
   // Web 版(hoshino-poko.com)と開発用のローカルだけ。BOOTH の zip / ローカルファイルでは何も出さない
   if (!/^((www\.)?hoshino-poko\.com|localhost|127\.0\.0\.1)$/.test(location.hostname)) return;
-  const m = location.pathname.match(/^\/tools\/plus\/(obs|guest)\/[A-Za-z0-9_-]{32,}\/[a-z0-9-]+\//);
+  const m = location.pathname.match(/^\/tools\/plus\/(obs|guest)\/([A-Za-z0-9_-]{32,})\/[a-z0-9-]+\//);
   const via = m ? m[1] : (/^\/tools\/plus\/[a-z0-9-]+\//.test(location.pathname) ? 'cookie' : null);
   if (!via) return;
+
+  // ---------- 人ごとの席(設計 §11): ゲストは席キーで同じ席に戻る ----------
+  // 保存先は招待トークンの先頭 6 文字ごと。localStorage が使えなければ sessionStorage → メモリ
+  const SEAT_PREFIX = 'poko-deco-seat:';
+  const seatStoreKey = via === 'guest' ? SEAT_PREFIX + m[2].slice(0, 6) : null;
+  let memSeatKey = null;
+  function storageList() {
+    const list = [];
+    try { if (window.localStorage) list.push(localStorage); } catch (_) {}
+    try { if (window.sessionStorage) list.push(sessionStorage); } catch (_) {}
+    return list;
+  }
+  function loadSeatKey() {
+    for (const st of storageList()) { try { const v = st.getItem(seatStoreKey); if (v) return v; } catch (_) {} }
+    return memSeatKey;
+  }
+  function saveSeatKey(key) {
+    memSeatKey = key;
+    for (const st of storageList()) {
+      try {
+        // 前の招待の席キーは消す(招待ごとに溜まらないように)
+        for (let i = st.length - 1; i >= 0; i--) { const k = st.key(i); if (k && k.startsWith(SEAT_PREFIX) && k !== seatStoreKey) st.removeItem(k); }
+        st.setItem(seatStoreKey, key);
+        return;
+      } catch (_) {}
+    }
+  }
+  if (seatStoreKey) {
+    // 「自分の OBS 用リンク」(#seat=席キー)で開いたら、その席として入る。# は画面に残さない
+    const h = location.hash.match(/^#seat=([A-Za-z0-9_-]{16,64})$/);
+    if (h) { saveSeatKey(h[1]); history.replaceState(null, '', location.pathname + location.search); }
+  }
+  let mySeatKey = null;           // この画面が実際に参加に使った席キー(自分の OBS 用リンクはこれで作る)
+  let protoV = 2;                  // 古いサーバー(v1 だけ)に当たったら 1 に落とす(公開順を間違えたときの保険)
+  let people = 0;
 
   const STAGE = { w: 1920, h: 1080 };
   const API = '/api/members/deco';
@@ -33,7 +68,7 @@
   css.textContent = `
     .collab-status { flex: 1; color: var(--ink); }
     .collab-status.warn { color: #ffcc33; }
-    #collabUrl { flex: 1; min-width: 0; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--panel-edge);
+    #collabUrl, #collabSelfUrl { flex: 1; min-width: 0; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--panel-edge);
       background: rgba(255,255,255,.06); color: var(--ink); font: inherit; font-size: 10px; user-select: all; }
     .collab-hide { display: none !important; }`;
   document.head.appendChild(css);
@@ -43,6 +78,7 @@
     <div class="row"><label>一緒に</label><div class="collab-status" id="collabStatus">確認中…</div></div>
     <div class="row collab-hide" id="collabStart"><button class="btn" id="collabOpen">一緒にデコる(部屋を開く)</button></div>
     <div class="row collab-hide" id="collabInvite"><input id="collabUrl" readonly><button class="btn" id="collabCopy" style="flex:none;padding:6px 10px">コピー</button></div>
+    <div class="row collab-hide" id="collabSelf" title="この URL を自分の OBS に貼ると、このブラウザと同じ席になります"><input id="collabSelfUrl" readonly><button class="btn" id="collabSelfCopy" style="flex:none;padding:6px 10px">自分のOBS用</button></div>
     <div class="row collab-hide" id="collabHost">
       <button class="btn" id="collabReinvite">招待をやり直す</button>
       <button class="btn" id="collabClose">部屋を閉じる</button>
@@ -59,8 +95,12 @@
     const host = via === 'cookie';
     show('collabStart', host && !inCollab && !stopped);
     show('collabHost', host && inCollab);
+    const selfKey = via === 'guest' && inCollab && welcomed ? mySeatKey : null;
+    show('collabSelf', !!selfKey);
+    if (selfKey) $('collabSelfUrl').value = location.origin + location.pathname + '#seat=' + selfKey;
     if (inCollab && welcomed) {
-      status((seat === 'host' ? 'ホスト' : 'ゲスト') + 'で参加中 ・ 相手: ' + (peer ? 'いる' : 'まだ'));
+      const me = seat === 'host' ? 'ホスト' : /^g\d+$/.test(seat || '') ? 'ゲスト ' + seat.slice(1) + ' ' : 'ゲスト';
+      status(me + 'で参加中 ・ ' + (protoV >= 2 && people ? '参加: ' + people + ' 人' : '相手: ' + (peer ? 'いる' : 'まだ')));
     }
   }
   function showInvite(path) {
@@ -69,10 +109,12 @@
     show('collabInvite', !!url);
     $('collabUrl').value = url;
   }
-  $('collabCopy').addEventListener('click', () => {
-    const el = $('collabUrl'); el.select();
+  function copyFrom(id) {
+    const el = $(id); el.select();
     (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).catch(() => document.execCommand('copy'));
-  });
+  }
+  $('collabCopy').addEventListener('click', () => copyFrom('collabUrl'));
+  $('collabSelfCopy').addEventListener('click', () => copyFrom('collabSelfUrl'));
 
   async function rest(method, path) {
     const res = await fetch(API + path, { method, credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
@@ -123,8 +165,9 @@
     ws = sock; welcomed = false; closedReason = null;
     if (!inCollab) status('つないでいます…');
     sock.onopen = () => {
-      const auth = { t: 'auth', v: 1, via };
+      const auth = { t: 'auth', v: protoV, via };
       if (via !== 'cookie') auth.path = location.pathname;
+      if (via === 'guest' && protoV >= 2) { const k = loadSeatKey(); mySeatKey = k; if (k) auth.seat_key = k; }
       sock.send(JSON.stringify(auth));
     };
     sock.onmessage = ev => { if (ws === sock) { try { onMessage(JSON.parse(ev.data)); } catch (err) { console.warn(err); } } };
@@ -148,6 +191,10 @@
         : 'ホストの部屋が開いていません。開くと自動でつながります');
     }
     if (code === 4403) { stopped = true; if (inCollab) return leaveCollab(via === 'guest' ? '招待が切れました(ホストが招待をやり直したか、部屋を閉じました)' : undefined); status(via === 'guest' ? '招待が切れています' : '使えません(権利がないか、URL が無効です)', true); return refreshUi(); }
+    // v2 の認証を古いサーバー(v1 だけ)が 4401 で断った: v1 でつなぎ直す(公開順を間違えたときの保険)
+    if (code === 4401 && protoV >= 2 && !inCollab) { protoV = 1; return retry(200); }
+    // 人数がいっぱい(ホスト + ゲスト 3 人)
+    if (code === 4410) return retry(30000, '人数がいっぱいです(ホスト + 3 人まで)。空いたら自動でつながります');
     if (code === 4401) {
       stopped = true;
       if (inCollab) return leaveCollab('ログインが切れました');
@@ -169,7 +216,9 @@
       case 's.begin': live.set(msg.tmp, fromWire(msg, [msg.pt])); return board.render();
       case 's.pts': { const o = live.get(msg.tmp); if (o) { for (const p of msg.pts) o.pts.push({ x: p[0], y: p[1] }); board.render(); } return; }
       case 's.abort': return onAbort(msg.tmp);
-      case 'peer': peer = msg.peer === 'joined'; return refreshUi();
+      case 'peer':
+        if (typeof msg.people === 'number') { people = msg.people; peer = people > 1; } else peer = msg.peer === 'joined';
+        return refreshUi();
       case 'error': {
         // 断られた線は描き終えても送らない(送るとサーバーには無い線が「確定待ち」のまま残る)
         const tmp = msg.tmp || (msg.code === 'bad_message' && sendBuf ? sendBuf.tmp : null);
@@ -183,6 +232,9 @@
   function onWelcome(msg) {
     welcomed = true; retryMs = 1000; epoch++;
     seat = msg.seat; conn = msg.conn; peer = !!msg.peer;
+    protoV = msg.v >= 2 ? 2 : 1;
+    people = msg.people || 0;
+    if (msg.seat_key && seatStoreKey) { mySeatKey = msg.seat_key; saveSeatKey(msg.seat_key); }
     maxPoints = (msg.limits && msg.limits.stroke_points) || 4000;
     if (!inCollab) enterCollab();
     ops = (msg.ops || []).map(o => fromWire(o, o.pts));
