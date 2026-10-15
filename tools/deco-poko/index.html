@@ -196,7 +196,7 @@
 
 <script>
 (() => {
-  const VERSION = '0.3.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '0.3.1'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -246,6 +246,12 @@
   // base = 戻せなくなった古い操作(と読み込んだ保存画像)を焼き込んだ画像。レイヤー = base + ops
   const base = [];
   for (let i = 0; i < LAYER_COUNT; i++) { layers.push(null); base.push(null); }
+  // 縁取りが続く間はフチをまとめる(普通のペン・消しゴム・消去で区切る)。そのためにレイヤーごとに
+  //   grp   = 今続いている縁取りの op(この間はフチを全部下に、線を全部上に描く)
+  //   below = その縁取りが始まる前の画像(grp があるときだけ使う)
+  // を持つ。L = 表示しているレイヤー、B = base(戻せない部分)。base をまたいで続く縁取りもつながる
+  const L = [], B = [];
+  for (let i = 0; i < LAYER_COUNT; i++) { L.push({ grp: [], below: null }); B.push({ grp: [], below: null }); }
 
   let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
   let scratch = null; // 描き直しで線 1 本を組み立てる作業用
@@ -265,7 +271,10 @@
       if (old && ow && oh) c.getContext('2d').drawImage(old, 0, 0);
       return c;
     };
-    for (let i = 0; i < LAYER_COUNT; i++) { layers[i] = grow(layers[i]); base[i] = grow(base[i]); }
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      layers[i] = grow(layers[i]); base[i] = grow(base[i]);
+      L[i].below = grow(L[i].below); B[i].below = grow(B[i].below);
+    }
     temp = grow(null); scratch = grow(null);
     render();
   }
@@ -281,7 +290,9 @@
       vctx.setTransform(vs, 0, 0, vs, vox, voy);
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
-        vctx.drawImage(layers[i], 0, 0);
+        // 縁取りを続けて描いている途中は、まとまり全体を temp に描き直しているので、始まる前の画像の上に重ねる
+        const cont = stroke && i === stroke.layer && stroke.tool === 'outline' && L[i].grp.length;
+        vctx.drawImage(cont ? L[i].below : layers[i], 0, 0);
         if (board.collab) board.collab.renderLayer(vctx, i); // 確定待ちの自分の線・相手の描きかけ
         if (stroke && i === stroke.layer && stroke.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
       }
@@ -298,6 +309,7 @@
 
   // 線 1 本を ctx に重ねる。縁取りは scratch で「フチ+線」を組み立ててから重ねる(描いている途中の表示と同じ)
   function applyOp(ctx, op) {
+    if (op.kind === 'break') return; // 縁取りのまとまりを区切るだけの印(一緒にデコるの「自分の線だけ消す」など)
     if (op.kind === 'clear') { ctx.clearRect(0, 0, W, H); return; }
     if (op.tool === 'eraser') { drawPath(ctx, op.pts, op.size, '#000', 1, 'destination-out'); return; }
     const r = (op.tool === 'outline' ? op.size + op.osize * 2 : op.size) / 2 + 2;
@@ -315,11 +327,51 @@
     if (op.tool === 'outline') drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
-  function rebuild(i) {
+  // 続いている縁取りをまとめて描く: フチを全部 → 線を全部(scratch で組み立ててから重ねる)
+  function paintGroupTo(c, grp) {
+    for (const op of grp) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
+    for (const op of grp) drawPath(c, op.pts, op.size, op.color, op.alpha);
+  }
+  function drawGroup(ctx, grp) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const op of grp) {
+      const r = (op.size + op.osize * 2) / 2 + 2;
+      for (const p of op.pts) { x0 = Math.min(x0, p.x - r); y0 = Math.min(y0, p.y - r); x1 = Math.max(x1, p.x + r); y1 = Math.max(y1, p.y + r); }
+    }
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
+    if (w <= 0 || h <= 0) return;
+    const c = scratch.getContext('2d');
+    c.clearRect(x0, y0, w, h);
+    paintGroupTo(c, grp);
+    ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
+  }
+  // canvas と状態 st({grp, below})に、そのレイヤーの op を順に足す。縁取りの続きはまとめて 1 回で描き直す
+  function appendOps(canvas, st, list) {
+    const ctx = canvas.getContext('2d');
+    let run = [];
+    const flush = () => {
+      if (!run.length) return;
+      const b = st.below.getContext('2d');
+      if (!st.grp.length) { b.clearRect(0, 0, W, H); b.drawImage(canvas, 0, 0); } // まとまりの始まり
+      st.grp.push(...run); run = [];
+      ctx.clearRect(0, 0, W, H); ctx.drawImage(st.below, 0, 0);
+      drawGroup(ctx, st.grp);
+    };
+    for (const op of list) {
+      if (op.kind !== 'clear' && op.tool === 'outline') { run.push(op); continue; }
+      flush(); st.grp = []; // 普通のペン・消しゴム・消去で区切る
+      applyOp(ctx, op);
+    }
+    flush();
+  }
+  // レイヤー i を base から描き直す
+  function rebuild(i, list) {
     const c = layers[i].getContext('2d');
-    c.clearRect(0, 0, W, H);
-    c.drawImage(base[i], 0, 0);
-    for (const op of ops) if (affects(op, i)) applyOp(c, op);
+    c.clearRect(0, 0, W, H); c.drawImage(base[i], 0, 0);
+    L[i].grp = B[i].grp.slice();
+    if (L[i].grp.length) { const b = L[i].below.getContext('2d'); b.clearRect(0, 0, W, H); b.drawImage(B[i].below, 0, 0); }
+    appendOps(layers[i], L[i], list || ops.filter(op => affects(op, i)));
   }
   // 確定した op を記録する(画面にはもう出ている)
   function commit(op) {
@@ -327,7 +379,7 @@
     redoOps = [];
     if (ops.length > OPS_MAX) {
       const old = ops.shift();
-      for (const i of opLayers(old)) applyOp(base[i].getContext('2d'), old);
+      for (const i of opLayers(old)) appendOps(base[i], B[i], [old]);
     }
     updateButtons(); save();
   }
@@ -342,7 +394,7 @@
     const op = redoOps.pop();
     if (!op) return;
     ops.push(op);
-    for (const i of opLayers(op)) applyOp(layers[i].getContext('2d'), op);
+    for (const i of opLayers(op)) appendOps(layers[i], L[i], [op]);
     updateButtons(); render(); save();
   }
   function updateButtons() {
@@ -393,7 +445,9 @@
   function paintTemp() {
     const c = temp.getContext('2d');
     c.clearRect(0, 0, W, H);
-    paintStrokeTo(c, stroke);
+    // 縁取りが続くなら、まとまり全体(今の線を含む)を描き直す。表示は始まる前の画像 + temp(render)
+    const grp = stroke.tool === 'outline' ? L[stroke.layer].grp : [];
+    if (grp.length) paintGroupTo(c, [...grp, stroke]); else paintStrokeTo(c, stroke);
   }
   function erase(pts) {
     drawPath(layers[stroke.layer].getContext('2d'), pts, stroke.size, '#000', 1, 'destination-out');
@@ -447,11 +501,11 @@
       return;
     }
     if (op.tool !== 'eraser') {
-      // 途中の表示と同じものを重ねる(描き直さない)
-      layers[op.layer].getContext('2d').drawImage(temp, 0, 0);
       temp.getContext('2d').clearRect(0, 0, W, H);
       pushColorHistory(op.color); // 実際に描いた色だけが履歴に入る
     }
+    // 途中の表示と同じ描き方で確定する(消しゴムは描いている間にもう消してある。もう一度消しても同じ)
+    appendOps(layers[op.layer], L[op.layer], [op]);
     commit(op);
     render();
   };
@@ -664,7 +718,7 @@
   $('redo').addEventListener('click', () => board.collab ? board.collab.redo() : redo());
   function clearLayers(layer) {
     const op = { kind: 'clear', layer };
-    for (const i of opLayers(op)) applyOp(layers[i].getContext('2d'), op);
+    for (const i of opLayers(op)) appendOps(layers[i], L[i], [op]);
     commit(op); render();
   }
   $('clearLayer').addEventListener('click', () => board.collab ? board.collab.clear(state.active) : clearLayers(state.active));
@@ -803,10 +857,13 @@
       for (let i = 0; i < LAYER_COUNT; i++) {
         layers[i].getContext('2d').clearRect(0, 0, W, H);
         base[i].getContext('2d').clearRect(0, 0, W, H);
+        L[i].grp = []; B[i].grp = [];
       }
       ops = []; redoOps = []; updateButtons(); render();
     },
-    clearLayer(i) { layers[i].getContext('2d').clearRect(0, 0, W, H); },
+    // レイヤー i を空から list(seq 順の op)で描き直す / 末尾に足す。縁取りのまとめ方は 1 人のときと同じ
+    relayer(i, list) { layers[i].getContext('2d').clearRect(0, 0, W, H); L[i].grp = []; appendOps(layers[i], L[i], list); },
+    appendLayer(i, list) { appendOps(layers[i], L[i], list); },
   };
   window.decoBoard = board;
 
