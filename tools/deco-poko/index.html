@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>デコポコ</title>
+<title>デコポコ プラス</title>
 <style>
   :root {
     --panel: rgba(28, 22, 34, 0.92);
@@ -62,6 +62,8 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.4);
     backdrop-filter: blur(8px);
     font-size: 12px; line-height: 1.4;
+    max-height: calc(100vh - 8px); overflow-y: auto; /* 小さいウィンドウでも下の欄まで届くように */
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent;
   }
   #panel.closed { display: none; }
   .row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
@@ -194,11 +196,13 @@
 
 <script>
 (() => {
-  const VERSION = '0.2.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '0.3.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
-  const LS_KEY = 'poko-deco-poko-v1' + (BOARD_ID ? ':' + BOARD_ID : '');
+  // 一緒にデコるの OBS 用 / 招待 URL の画面は、ブラウザ版(1 人で描く絵)と保存を分ける(同じブラウザで開いても絵を上書きしない)
+  const PLUS_VIA = (location.pathname.match(/^\/tools\/plus\/(obs|guest)\//) || [])[1];
+  const LS_KEY = 'poko-deco-poko-v1' + (PLUS_VIA ? ':' + PLUS_VIA : '') + (BOARD_ID ? ':' + BOARD_ID : '');
   const LAYER_COUNT = 3;
   const OPS_MAX = 100; // 戻せる回数。超えた古い操作は base に焼き込む
   const PRESETS = ['#ffffff', '#000000', '#ff7fb3', '#ff4d4d', '#ffcc33', '#5ad66b', '#4aa3ff', '#b57bff'];
@@ -210,7 +214,10 @@
   const fab = document.getElementById('fab');
   const panel = document.getElementById('panel');
 
-  let W = 0, H = 0;
+  let W = 0, H = 0;   // 絵の大きさ(1 人のときはウィンドウ、一緒にデコる中は 1920x1080 の論理座標)
+  let VW = 0, VH = 0; // ウィンドウ(表示)の大きさ
+  let stage = null;   // 一緒にデコる中だけ {w: 1920, h: 1080}。collab.js が setStage で切り替える
+  let vs = 1, vox = 0, voy = 0; // 絵 → 表示の拡大率とずらし
 
   // ---------- state ----------
   const state = {
@@ -243,12 +250,16 @@
   let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
   let scratch = null; // 描き直しで線 1 本を組み立てる作業用
 
-  function resize() {
-    const nw = window.innerWidth, nh = window.innerHeight;
-    if (nw === W && nh === H) return;
+  function resize(force) {
+    VW = window.innerWidth; VH = window.innerHeight;
+    if (view.width !== VW || view.height !== VH) { view.width = VW; view.height = VH; }
+    const nw = stage ? stage.w : VW, nh = stage ? stage.h : VH;
+    vs = stage ? Math.min(VW / nw, VH / nh) : 1;
+    vox = stage ? (VW - nw * vs) / 2 : 0; voy = stage ? (VH - nh * vs) / 2 : 0;
+    updateCursorSize();
+    if (!force && nw === W && nh === H) { render(); return; }
     const ow = W, oh = H;
     W = nw; H = nh;
-    view.width = W; view.height = H;
     const grow = (old) => {
       const c = makeCanvas();
       if (old && ow && oh) c.getContext('2d').drawImage(old, 0, 0);
@@ -265,10 +276,13 @@
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
-      vctx.clearRect(0, 0, W, H);
+      vctx.setTransform(1, 0, 0, 1, 0, 0);
+      vctx.clearRect(0, 0, VW, VH);
+      vctx.setTransform(vs, 0, 0, vs, vox, voy);
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
         vctx.drawImage(layers[i], 0, 0);
+        if (board.collab) board.collab.renderLayer(vctx, i); // 確定待ちの自分の線・相手の描きかけ
         if (stroke && i === stroke.layer && stroke.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
       }
     });
@@ -332,8 +346,9 @@
     updateButtons(); render(); save();
   }
   function updateButtons() {
-    document.getElementById('undo').disabled = ops.length === 0;
-    document.getElementById('redo').disabled = redoOps.length === 0;
+    // 一緒にデコる中は戻す対象をサーバーが選ぶので、押せるままにする
+    document.getElementById('undo').disabled = !board.collab && ops.length === 0;
+    document.getElementById('redo').disabled = !board.collab && redoOps.length === 0;
   }
   function loadInto(canvas, url, keep) {
     return new Promise(res => {
@@ -384,15 +399,20 @@
     drawPath(layers[stroke.layer].getContext('2d'), pts, stroke.size, '#000', 1, 'destination-out');
   }
 
+  // 一緒にデコる中はサーバーと同じく小数 1 桁に丸める(自分の表示と相手・描き直しの画素を揃える)
+  const q1 = v => board.collab ? Math.round(v * 10) / 10 : v;
+  const toBoard = ev => ({ x: q1((ev.clientX - vox) / vs), y: q1((ev.clientY - voy) / vs) });
   view.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     if (!state.visible[state.active]) return;
+    if (board.collab && !board.collab.canDraw()) return;
     view.setPointerCapture(e.pointerId);
     stroke = {
       kind: 'stroke', layer: state.active, tool: state.tool, color: state.color, alpha: state.alpha,
       size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
-      pts: [{ x: e.clientX, y: e.clientY }],
+      pts: [toBoard(e)],
     };
+    if (board.collab) board.collab.begin(stroke);
     if (stroke.tool === 'eraser') erase(stroke.pts); else paintTemp();
     render();
   });
@@ -401,7 +421,9 @@
     if (!stroke) return;
     let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     if (!evs.length) evs = [e];
-    for (const ev of evs) stroke.pts.push({ x: ev.clientX, y: ev.clientY });
+    const from = stroke.pts.length;
+    for (const ev of evs) stroke.pts.push(toBoard(ev));
+    if (board.collab) board.collab.points(stroke, stroke.pts.slice(from));
     if (stroke.tool === 'eraser') {
       // eraser is incremental on the layer itself (destination-out does not stack visibly)
       erase(stroke.pts.slice(-Math.min(stroke.pts.length, evs.length + 2)));
@@ -409,11 +431,21 @@
       paintTemp();
     }
     render();
+    // 1 本の点数の上限(サーバーもそこで確定する)。超えたらそこで描き終わりにする
+    if (board.collab && stroke.pts.length >= board.collab.maxPoints()) endStroke();
   });
   const endStroke = e => {
     if (!stroke) return;
     const op = stroke;
     stroke = null;
+    if (board.collab) {
+      // 確定はサーバーの返事で行う。それまでは途中の表示を「確定待ち」として出しておく
+      board.collab.end(op, temp);
+      temp.getContext('2d').clearRect(0, 0, W, H);
+      if (op.tool !== 'eraser') pushColorHistory(op.color);
+      render();
+      return;
+    }
     if (op.tool !== 'eraser') {
       // 途中の表示と同じものを重ねる(描き直さない)
       layers[op.layer].getContext('2d').drawImage(temp, 0, 0);
@@ -434,7 +466,7 @@
     cursorEl.style.top = e.clientY + 'px';
   }
   function updateCursorSize() {
-    const d = state.tool === 'outline' ? state.size + state.osize * 2 : state.size;
+    const d = (state.tool === 'outline' ? state.size + state.osize * 2 : state.size) * vs;
     cursorEl.style.width = d + 'px'; cursorEl.style.height = d + 'px';
   }
 
@@ -628,15 +660,15 @@
     }
   }
 
-  $('undo').addEventListener('click', undo);
-  $('redo').addEventListener('click', redo);
+  $('undo').addEventListener('click', () => board.collab ? board.collab.undo() : undo());
+  $('redo').addEventListener('click', () => board.collab ? board.collab.redo() : redo());
   function clearLayers(layer) {
     const op = { kind: 'clear', layer };
     for (const i of opLayers(op)) applyOp(layers[i].getContext('2d'), op);
     commit(op); render();
   }
-  $('clearLayer').addEventListener('click', () => clearLayers(state.active));
-  $('clearAll').addEventListener('click', () => clearLayers('all'));
+  $('clearLayer').addEventListener('click', () => board.collab ? board.collab.clear(state.active) : clearLayers(state.active));
+  $('clearAll').addEventListener('click', () => board.collab ? board.collab.clear('all') : clearLayers('all'));
   $('hideUi').addEventListener('click', () => setUiHidden(true));
 
   function setUiHidden(h) {
@@ -669,7 +701,7 @@
     drag = null;
   });
   function placeFab(x, y) {
-    x = Math.max(4, Math.min(W - 50, x)); y = Math.max(4, Math.min(H - 50, y));
+    x = Math.max(4, Math.min(VW - 50, x)); y = Math.max(4, Math.min(VH - 50, y));
     state.fab = { x, y };
     fab.style.left = x + 'px'; fab.style.top = y + 'px';
     positionPanel();
@@ -678,8 +710,8 @@
     if (!state.fab) return;
     const pw = 250, ph = panel.offsetHeight || 330;
     let x = state.fab.x + 54, y = state.fab.y;
-    if (x + pw > W - 4) x = state.fab.x - pw - 8;
-    if (y + ph > H - 4) y = Math.max(4, H - ph - 4);
+    if (x + pw > VW - 4) x = state.fab.x - pw - 8;
+    if (y + ph > VH - 4) y = Math.max(4, VH - ph - 4);
     panel.style.left = x + 'px'; panel.style.top = y + 'px';
   }
 
@@ -703,13 +735,17 @@
             visible: state.visible, history: state.history, fab: state.fab,
             uiHidden: state.uiHidden, panelOpen: state.panelOpen,
           },
-          layers: layers.map(L => ({ img: L.toDataURL() })),
+          // 一緒にデコる中の絵は保存しない(1 人で描いていた絵をそのまま残す)
+          layers: board.collab ? soloLayers() : layers.map(L => ({ img: L.toDataURL() })),
         };
         localStorage.setItem(LS_KEY, JSON.stringify(data));
       } catch (err) {
         console.warn('save failed', err);
       }
     }, 300);
+  }
+  function soloLayers() {
+    try { return (JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}).layers || []; } catch (_) { return []; }
   }
   function load() {
     let data = null;
@@ -751,9 +787,28 @@
     setTool(state.tool); setEdge(state.oedge);
     refreshSwatches(); refreshLayers(); updateButtons();
     ui.classList.toggle('hidden', state.uiHidden);
-    placeFab(state.fab ? state.fab.x : W - 70, state.fab ? state.fab.y : H - 70);
+    placeFab(state.fab ? state.fab.x : VW - 70, state.fab ? state.fab.y : VH - 70);
     setPanelOpen(state.panelOpen);
   }
+
+  // ---------- collab.js(有償版の一緒にデコる)から使う口 ----------
+  const board = {
+    collab: null, // 一緒にデコる中は collab.js のオブジェクト(begin / points / end / clear / undo / redo / renderLayer / canDraw / maxPoints)
+    LAYER_COUNT, state, layers, panel,
+    get W() { return W; }, get H() { return H; }, get stroke() { return stroke; },
+    applyOp, paintStrokeTo, drawPath, render, makeCanvas, updateButtons, save,
+    // 論理座標のステージに切り替える / 戻す。切り替えるとレイヤーは空になる
+    setStage(st) {
+      stage = st; resize(true);
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        layers[i].getContext('2d').clearRect(0, 0, W, H);
+        base[i].getContext('2d').clearRect(0, 0, W, H);
+      }
+      ops = []; redoOps = []; updateButtons(); render();
+    },
+    clearLayer(i) { layers[i].getContext('2d').clearRect(0, 0, W, H); },
+  };
+  window.decoBoard = board;
 
   // ---------- init ----------
   if (typeof window.obsstudio === 'undefined' && new URLSearchParams(location.search).get('bg') !== 'transparent') document.body.classList.add('preview');
@@ -763,5 +818,6 @@
   load().then(() => { applySettingsToUi(); render(); });
 })();
 </script>
+<script src="collab.js"></script>
 </body>
 </html>
