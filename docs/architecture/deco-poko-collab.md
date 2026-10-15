@@ -78,7 +78,7 @@ cnh-vps nginx ──(Upgrade 付きで proxy)──▶ pokonya-api:29985
 今のデコポコは「レイヤー画像のスナップショット」で戻す / やり直すをしている。2 人で描くと「自分の線だけ戻す」ができないので、**操作ログ(op)から描き直す方式** に変える。
 
 ```text
-op = 線   {id, seq, seat, layer, tool(brush|outline|eraser), color, alpha, size, edge(auto|white|black), osize, pts[[x,y],...], undone}
+op = 線   {id, seq, seat, layer, tool(brush|outline|eraser|neon|marker。neon・marker はプラス 0.5.0 から), color, alpha, size, edge(auto|white|black|#rrggbb), osize, pts[[x,y],...], undone}
    | 消去 {id, seq, seat, layer|all, scope(mine|all), undone}
 レイヤーの画像 = そのレイヤーの op を seq 順に描いたもの(undone は飛ばす)
 ```
