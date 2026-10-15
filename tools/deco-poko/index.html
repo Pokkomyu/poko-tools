@@ -456,21 +456,25 @@
   // 一緒にデコる中はサーバーと同じく小数 1 桁に丸める(自分の表示と相手・描き直しの画素を揃える)
   const q1 = v => board.collab ? Math.round(v * 10) / 10 : v;
   const toBoard = ev => ({ x: q1((ev.clientX - vox) / vs), y: q1((ev.clientY - voy) / vs) });
+  // 描くのは最初に触れた指(ポインター)だけ。描いている間の 2 本目以降の指は無視する
+  // (スマホで 2 本指の拡大をしようとすると、指と指の間が線でつながっていた。2026-10-16 ぽこ報告)
   view.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
+    if (stroke) return;
     if (!state.visible[state.active]) return;
     if (board.collab && !board.collab.canDraw()) return;
     view.setPointerCapture(e.pointerId);
     stroke = {
       kind: 'stroke', layer: state.active, tool: state.tool, color: state.color, alpha: state.alpha,
       size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
-      pts: [toBoard(e)],
+      pts: [toBoard(e)], pid: e.pointerId,
     };
     if (board.collab) board.collab.begin(stroke);
     if (stroke.tool === 'eraser') erase(stroke.pts); else paintTemp();
     render();
   });
   view.addEventListener('pointermove', e => {
+    if (stroke && e.pointerId !== stroke.pid) return;
     moveCursor(e);
     if (!stroke) return;
     let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -489,9 +493,10 @@
     if (board.collab && stroke.pts.length >= board.collab.maxPoints()) endStroke();
   });
   const endStroke = e => {
-    if (!stroke) return;
+    if (!stroke || (e && e.pointerId !== stroke.pid)) return;
     const op = stroke;
     stroke = null;
+    delete op.pid;
     if (board.collab) {
       // 確定はサーバーの返事で行う。それまでは途中の表示を「確定待ち」として出しておく
       board.collab.end(op, temp);

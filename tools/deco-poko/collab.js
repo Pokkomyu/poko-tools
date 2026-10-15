@@ -70,7 +70,10 @@
     .collab-status.warn { color: #ffcc33; }
     #collabUrl, #collabSelfUrl { flex: 1; min-width: 0; padding: 5px 6px; border-radius: 8px; border: 1px solid var(--panel-edge);
       background: rgba(255,255,255,.06); color: var(--ink); font: inherit; font-size: 10px; user-select: all; }
-    .collab-hide { display: none !important; }`;
+    .collab-hide { display: none !important; }
+    #collabTip { position: fixed; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 999px; background: rgba(28,22,34,.85); color: #f3eef7; font-size: 13px;
+      pointer-events: none; z-index: 20; white-space: nowrap; }`;
   document.head.appendChild(css);
   const box = document.createElement('div');
   box.innerHTML = `
@@ -83,6 +86,14 @@
       <button class="btn" id="collabReinvite">招待をやり直す</button>
       <button class="btn" id="collabClose">部屋を閉じる</button>
     </div>`;
+  // スマホを縦にしていると描ける範囲が狭い(1920x1080 を縮めて表示している)ので、下の余白に案内を出す。配信(OBS)には出さない
+  const tip = document.createElement('div');
+  tip.id = 'collabTip'; tip.textContent = '横向きにすると大きく描けます'; tip.hidden = true;
+  document.body.appendChild(tip);
+  function checkOrientation() {
+    tip.hidden = !(inCollab && typeof window.obsstudio === 'undefined' && window.innerHeight > window.innerWidth);
+  }
+  window.addEventListener('resize', checkOrientation);
   const hint = board.panel.querySelector('.hint');
   board.panel.insertBefore(box, hint);
   const $ = id => document.getElementById(id);
@@ -92,6 +103,7 @@
     $('collabStatus').classList.toggle('warn', !!warn);
   }
   function refreshUi() {
+    checkOrientation();
     const host = via === 'cookie';
     show('collabStart', host && !inCollab && !stopped);
     show('collabHost', host && inCollab);
@@ -167,6 +179,7 @@
     sock.onopen = () => {
       const auth = { t: 'auth', v: protoV, via };
       if (via !== 'cookie') auth.path = location.pathname;
+      mySeatKey = null;              // v1 のサーバーでは席キーは使わない(自分の OBS 用リンクも出さない)
       if (via === 'guest' && protoV >= 2) { const k = loadSeatKey(); mySeatKey = k; if (k) auth.seat_key = k; }
       sock.send(JSON.stringify(auth));
     };
