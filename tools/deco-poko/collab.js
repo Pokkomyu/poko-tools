@@ -315,7 +315,7 @@
     const extra = [...pending.values()].filter(p => !p.canvas && p.op.layer === i).map(p => p.op);
     // 描いている途中の消しゴムも同じ(消し跡が描き直しで消えないように)
     const cur = board.stroke;
-    if (cur && cur.tool === 'eraser' && cur.layer === i) extra.push(cur);
+    if (cur && cur.tool === 'eraser' && cur.layer === i && cur.begun !== false) extra.push(cur); // 描き始める前(8px 動かす前)は消していない
     if (extra.length) board.appendLayer(i, extra);
   }
 
