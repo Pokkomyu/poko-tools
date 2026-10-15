@@ -1,7 +1,7 @@
 {
   "name": "deco-poko",
   "displayName": "デコポコ",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "obs": {
     "width": 1920,
     "height": 1080,
