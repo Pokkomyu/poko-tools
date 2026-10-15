@@ -194,13 +194,13 @@
 
 <script>
 (() => {
-  const VERSION = '0.1.1'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '0.2.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
   const LS_KEY = 'poko-deco-poko-v1' + (BOARD_ID ? ':' + BOARD_ID : '');
   const LAYER_COUNT = 3;
-  const UNDO_MAX = 20;
+  const OPS_MAX = 100; // 戻せる回数。超えた古い操作は base に焼き込む
   const PRESETS = ['#ffffff', '#000000', '#ff7fb3', '#ff4d4d', '#ffcc33', '#5ad66b', '#4aa3ff', '#b57bff'];
 
   const view = document.getElementById('view');
@@ -236,9 +236,12 @@
     c.width = Math.max(1, W); c.height = Math.max(1, H);
     return c;
   };
-  for (let i = 0; i < LAYER_COUNT; i++) layers.push(null);
+  // base = 戻せなくなった古い操作(と読み込んだ保存画像)を焼き込んだ画像。レイヤー = base + ops
+  const base = [];
+  for (let i = 0; i < LAYER_COUNT; i++) { layers.push(null); base.push(null); }
 
-  let temp = null; // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
+  let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
+  let scratch = null; // 描き直しで線 1 本を組み立てる作業用
 
   function resize() {
     const nw = window.innerWidth, nh = window.innerHeight;
@@ -251,8 +254,8 @@
       if (old && ow && oh) c.getContext('2d').drawImage(old, 0, 0);
       return c;
     };
-    for (let i = 0; i < LAYER_COUNT; i++) layers[i] = grow(layers[i]);
-    temp = grow(null);
+    for (let i = 0; i < LAYER_COUNT; i++) { layers[i] = grow(layers[i]); base[i] = grow(base[i]); }
+    temp = grow(null); scratch = grow(null);
     render();
   }
 
@@ -266,24 +269,71 @@
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
         vctx.drawImage(layers[i], 0, 0);
-        if (i === state.active && stroke && state.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
+        if (stroke && i === stroke.layer && stroke.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
       }
     });
   }
 
-  // ---------- undo ----------
-  const undoStack = [], redoStack = [];
-  function snapshot(indices) {
-    return indices.map(i => ({ i, url: layers[i].toDataURL() }));
+  // ---------- 操作ログ(戻す / やり直す) ----------
+  // op = 線   {kind: 'stroke', layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize, pts: [{x, y}]}
+  //    | 消去 {kind: 'clear', layer: 0..2 | 'all'}
+  // レイヤーの画像 = base + そのレイヤーに関わる op を順に重ねたもの。戻すは最後の op を外して描き直す
+  let ops = [], redoOps = [];
+  const affects = (op, i) => op.layer === 'all' || op.layer === i;
+  const opLayers = op => op.layer === 'all' ? [...Array(LAYER_COUNT).keys()] : [op.layer];
+
+  // 線 1 本を ctx に重ねる。縁取りは scratch で「フチ+線」を組み立ててから重ねる(描いている途中の表示と同じ)
+  function applyOp(ctx, op) {
+    if (op.kind === 'clear') { ctx.clearRect(0, 0, W, H); return; }
+    if (op.tool === 'eraser') { drawPath(ctx, op.pts, op.size, '#000', 1, 'destination-out'); return; }
+    const r = (op.tool === 'outline' ? op.size + op.osize * 2 : op.size) / 2 + 2;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of op.pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    x0 = Math.max(0, Math.floor(x0 - r)); y0 = Math.max(0, Math.floor(y0 - r));
+    const w = Math.min(W, Math.ceil(x1 + r)) - x0, h = Math.min(H, Math.ceil(y1 + r)) - y0;
+    if (w <= 0 || h <= 0) return;
+    const c = scratch.getContext('2d');
+    c.clearRect(x0, y0, w, h);
+    paintStrokeTo(c, op);
+    ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
-  function pushUndo(indices) {
-    undoStack.push(snapshot(indices));
-    if (undoStack.length > UNDO_MAX) undoStack.shift();
-    redoStack.length = 0;
-    updateButtons();
+  function paintStrokeTo(c, op) {
+    if (op.tool === 'outline') drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
+    drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
-  function restore(snap) {
-    return Promise.all(snap.map(s => loadInto(layers[s.i], s.url))).then(() => { render(); save(); });
+  function rebuild(i) {
+    const c = layers[i].getContext('2d');
+    c.clearRect(0, 0, W, H);
+    c.drawImage(base[i], 0, 0);
+    for (const op of ops) if (affects(op, i)) applyOp(c, op);
+  }
+  // 確定した op を記録する(画面にはもう出ている)
+  function commit(op) {
+    ops.push(op);
+    redoOps = [];
+    if (ops.length > OPS_MAX) {
+      const old = ops.shift();
+      for (const i of opLayers(old)) applyOp(base[i].getContext('2d'), old);
+    }
+    updateButtons(); save();
+  }
+  function undo() {
+    const op = ops.pop();
+    if (!op) return;
+    redoOps.push(op);
+    for (const i of opLayers(op)) rebuild(i);
+    updateButtons(); render(); save();
+  }
+  function redo() {
+    const op = redoOps.pop();
+    if (!op) return;
+    ops.push(op);
+    for (const i of opLayers(op)) applyOp(layers[i].getContext('2d'), op);
+    updateButtons(); render(); save();
+  }
+  function updateButtons() {
+    document.getElementById('undo').disabled = ops.length === 0;
+    document.getElementById('redo').disabled = redoOps.length === 0;
   }
   function loadInto(canvas, url, keep) {
     return new Promise(res => {
@@ -298,25 +348,9 @@
       img.src = url;
     });
   }
-  function undo() {
-    const snap = undoStack.pop();
-    if (!snap) return;
-    redoStack.push(snapshot(snap.map(s => s.i)));
-    restore(snap); updateButtons();
-  }
-  function redo() {
-    const snap = redoStack.pop();
-    if (!snap) return;
-    undoStack.push(snapshot(snap.map(s => s.i)));
-    restore(snap); updateButtons();
-  }
-  function updateButtons() {
-    document.getElementById('undo').disabled = undoStack.length === 0;
-    document.getElementById('redo').disabled = redoStack.length === 0;
-  }
 
   // ---------- drawing ----------
-  let stroke = null; // { pts: [] }
+  let stroke = null; // 描いている途中の op(kind: 'stroke')
 
   function drawPath(ctx, pts, width, color, alpha, composite) {
     ctx.save();
@@ -341,23 +375,25 @@
   }
 
   // ペン / 縁取りは temp に描く(縁取りはフチ → 線の順で同じ canvas に)
-  function paintTemp(pts) {
+  function paintTemp() {
     const c = temp.getContext('2d');
     c.clearRect(0, 0, W, H);
-    if (state.tool === 'outline') drawPath(c, pts, state.size + state.osize * 2, edgeColor(), 1);
-    drawPath(c, pts, state.size, state.color, state.alpha);
+    paintStrokeTo(c, stroke);
   }
   function erase(pts) {
-    drawPath(layers[state.active].getContext('2d'), pts, state.size, '#000', 1, 'destination-out');
+    drawPath(layers[stroke.layer].getContext('2d'), pts, stroke.size, '#000', 1, 'destination-out');
   }
 
   view.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     if (!state.visible[state.active]) return;
     view.setPointerCapture(e.pointerId);
-    pushUndo([state.active]);
-    stroke = { pts: [{ x: e.clientX, y: e.clientY }] };
-    if (state.tool === 'eraser') erase(stroke.pts); else paintTemp(stroke.pts);
+    stroke = {
+      kind: 'stroke', layer: state.active, tool: state.tool, color: state.color, alpha: state.alpha,
+      size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
+      pts: [{ x: e.clientX, y: e.clientY }],
+    };
+    if (stroke.tool === 'eraser') erase(stroke.pts); else paintTemp();
     render();
   });
   view.addEventListener('pointermove', e => {
@@ -366,24 +402,26 @@
     let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     if (!evs.length) evs = [e];
     for (const ev of evs) stroke.pts.push({ x: ev.clientX, y: ev.clientY });
-    if (state.tool === 'eraser') {
+    if (stroke.tool === 'eraser') {
       // eraser is incremental on the layer itself (destination-out does not stack visibly)
       erase(stroke.pts.slice(-Math.min(stroke.pts.length, evs.length + 2)));
     } else {
-      paintTemp(stroke.pts);
+      paintTemp();
     }
     render();
   });
   const endStroke = e => {
     if (!stroke) return;
-    if (state.tool !== 'eraser') {
-      // 途中の表示と同じものを重ねる(描き直さない)
-      layers[state.active].getContext('2d').drawImage(temp, 0, 0);
-      temp.getContext('2d').clearRect(0, 0, W, H);
-      pushColorHistory(state.color); // 実際に描いた色だけが履歴に入る
-    }
+    const op = stroke;
     stroke = null;
-    render(); save();
+    if (op.tool !== 'eraser') {
+      // 途中の表示と同じものを重ねる(描き直さない)
+      layers[op.layer].getContext('2d').drawImage(temp, 0, 0);
+      temp.getContext('2d').clearRect(0, 0, W, H);
+      pushColorHistory(op.color); // 実際に描いた色だけが履歴に入る
+    }
+    commit(op);
+    render();
   };
   view.addEventListener('pointerup', endStroke);
   view.addEventListener('pointercancel', endStroke);
@@ -592,18 +630,13 @@
 
   $('undo').addEventListener('click', undo);
   $('redo').addEventListener('click', redo);
-  $('clearLayer').addEventListener('click', () => {
-    pushUndo([state.active]);
-    layers[state.active].getContext('2d').clearRect(0, 0, W, H);
-    render(); save();
-  });
-  $('clearAll').addEventListener('click', () => {
-    pushUndo([0, 1, 2]);
-    for (const L of layers) {
-      L.getContext('2d').clearRect(0, 0, W, H);
-    }
-    render(); save();
-  });
+  function clearLayers(layer) {
+    const op = { kind: 'clear', layer };
+    for (const i of opLayers(op)) applyOp(layers[i].getContext('2d'), op);
+    commit(op); render();
+  }
+  $('clearLayer').addEventListener('click', () => clearLayers(state.active));
+  $('clearAll').addEventListener('click', () => clearLayers('all'));
   $('hideUi').addEventListener('click', () => setUiHidden(true));
 
   function setUiHidden(h) {
@@ -702,7 +735,13 @@
         promises.push(loadInto(layers[i], L.outline).then(() => loadInto(layers[i], L.ink, true)));
       });
     }
-    return Promise.all(promises);
+    // 読み込んだ絵は base にも写す(読み込み前の操作は戻せない)
+    return Promise.all(promises).then(() => {
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        const c = base[i].getContext('2d');
+        c.clearRect(0, 0, W, H); c.drawImage(layers[i], 0, 0);
+      }
+    });
   }
 
   function applySettingsToUi() {
