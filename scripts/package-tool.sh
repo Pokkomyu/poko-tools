@@ -19,7 +19,10 @@ files = []
 # 直下の *.html はすべて入れる(tracker のように色ごとに HTML を分けるツールがある)
 for p in sorted(src.glob("*.html")):
     files.append((p, p.name))
-for f in ["style.css", "app.js", "CREDITS.md", "CHANGELOG.md"]:
+# 直下の *.js / *.css もすべて入れる(デコポコ プラスの collab.js のように、有償版だけのファイルがある)
+for p in sorted(list(src.glob("*.js")) + list(src.glob("*.css"))):
+    files.append((p, p.name))
+for f in ["CREDITS.md", "CHANGELOG.md"]:
     if (src / f).is_file():
         files.append((src / f, f))
 if (src / "assets").is_dir():
