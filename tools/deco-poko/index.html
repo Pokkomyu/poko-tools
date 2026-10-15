@@ -194,7 +194,7 @@
 
 <script>
 (() => {
-  const VERSION = '0.2.1'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '0.2.2'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -437,19 +437,23 @@
     drawPath(layers[stroke.layer].getContext('2d'), pts, stroke.size, '#000', 1, 'destination-out');
   }
 
+  // 描くのは最初に触れた指(ポインター)だけ。描いている間の 2 本目以降の指は無視する
+  // (スマホで 2 本指の拡大をしようとすると、指と指の間が線でつながっていた。2026-10-16 ぽこ報告)
   view.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
+    if (stroke) return;
     if (!state.visible[state.active]) return;
     view.setPointerCapture(e.pointerId);
     stroke = {
       kind: 'stroke', layer: state.active, tool: state.tool, color: state.color, alpha: state.alpha,
       size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
-      pts: [{ x: e.clientX, y: e.clientY }],
+      pts: [{ x: e.clientX, y: e.clientY }], pid: e.pointerId,
     };
     if (stroke.tool === 'eraser') erase(stroke.pts); else paintTemp();
     render();
   });
   view.addEventListener('pointermove', e => {
+    if (stroke && e.pointerId !== stroke.pid) return;
     moveCursor(e);
     if (!stroke) return;
     let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -464,9 +468,10 @@
     render();
   });
   const endStroke = e => {
-    if (!stroke) return;
+    if (!stroke || (e && e.pointerId !== stroke.pid)) return;
     const op = stroke;
     stroke = null;
+    delete op.pid;
     if (op.tool !== 'eraser') {
       temp.getContext('2d').clearRect(0, 0, W, H);
       pushColorHistory(op.color); // 実際に描いた色だけが履歴に入る
