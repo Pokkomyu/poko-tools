@@ -207,15 +207,14 @@
     const mine = msg.tmp ? pending.get(msg.tmp) : null;
     if (msg.tmp) { pending.delete(msg.tmp); live.delete(msg.tmp); }
     if (op.kind === 'clear') { for (const i of opLayers(op)) rebuild(i); return board.render(); }
-    const ctx = board.layers[op.layer].getContext('2d');
     if (mine) {
-      // 描き始めてから他の op が入っていなければ、途中の表示をそのまま重ねる(描いた直後と同じ画素)
-      if (mine.seenSeq === prev) { if (mine.canvas) ctx.drawImage(mine.canvas, 0, 0); }
+      // 描き始めてから他の op が入っていなければ末尾に足す(縁取りのまとまりも描き直しと同じになる)
+      if (mine.seenSeq === prev) board.appendLayer(op.layer, [op]);
       else rebuild(op.layer);
     } else if (op.tool === 'eraser' || hasPendingEraser(op.layer)) {
       rebuild(op.layer);
     } else {
-      board.applyOp(ctx, op);
+      board.appendLayer(op.layer, [op]);
     }
     board.render();
   }
@@ -235,23 +234,24 @@
   // ---------- 描き直し ----------
   const opLayers = op => op.layer === 'all' ? [...Array(board.LAYER_COUNT).keys()] : [op.layer];
   const hasPendingEraser = i => [...pending.values()].some(p => !p.canvas && p.op.layer === i);
-  // レイヤー i = 取り消していない op を seq 順に。消去は scope=all ならそれまでの全員の線、mine ならその席の線を消す
+  // レイヤー i = 取り消していない op を seq 順に。消去は scope=all ならそれまでの全員の線、mine ならその席の線を消す。
+  // 消去は縁取りのまとまりも区切る(1 人のときと同じ)
+  const BREAK = { kind: 'break' };
   function rebuild(i) {
     let vis = [];
     for (const op of ops) {
       if (undone.has(op.id)) continue;
       if (op.kind === 'clear') {
-        if (op.layer === 'all' || op.layer === i) vis = op.scope === 'mine' ? vis.filter(o => o.seat !== op.seat) : [];
+        if (op.layer === 'all' || op.layer === i) { vis = op.scope === 'mine' ? vis.filter(o => o.seat !== op.seat) : []; vis.push(BREAK); }
       } else if (op.layer === i) vis.push(op);
     }
-    board.clearLayer(i);
-    const ctx = board.layers[i].getContext('2d');
-    for (const op of vis) board.applyOp(ctx, op);
-    // 確定待ちの自分の消しゴムはレイヤーに直接描いているので、描き直したら重ね直す
-    for (const p of pending.values()) if (!p.canvas && p.op.layer === i) board.applyOp(ctx, p.op);
+    board.relayer(i, vis);
+    // 確定待ちの自分の消しゴムはレイヤーに直接描いているので、描き直したら重ね直す(縁取りのまとまりも区切れる)
+    const extra = [...pending.values()].filter(p => !p.canvas && p.op.layer === i).map(p => p.op);
     // 描いている途中の消しゴムも同じ(消し跡が描き直しで消えないように)
     const cur = board.stroke;
-    if (cur && cur.tool === 'eraser' && cur.layer === i) board.applyOp(ctx, cur);
+    if (cur && cur.tool === 'eraser' && cur.layer === i) extra.push(cur);
+    if (extra.length) board.appendLayer(i, extra);
   }
 
   // ---------- 送信(board から呼ばれる) ----------
