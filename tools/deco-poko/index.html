@@ -80,10 +80,10 @@
   .edot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; vertical-align: middle;
     box-shadow: 0 0 0 1px rgba(255,255,255,.6); }
   /* 画面に出る小パレット(右クリック / 長押し) */
-  #qp { position: fixed; z-index: 30; width: 214px; padding: 8px; border-radius: 12px; background: var(--panel);
+  #qp { position: fixed; z-index: 30; width: 252px; padding: 8px; border-radius: 12px; background: var(--panel);
     border: 1px solid var(--panel-edge); box-shadow: 0 8px 24px rgba(0,0,0,.45); color: var(--ink); font-size: 12px; }
   #qp .qtools { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-bottom: 6px; }
-  #qp .qtools button { padding: 5px 0; border-radius: 7px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.04);
+  #qp .qtools button { padding: 5px 0; white-space: nowrap; letter-spacing: -.02em; border-radius: 7px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.04);
     color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
   #qp .qtools button.on { background: var(--accent-soft); border-color: var(--accent); }
   #qp .qsw { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
@@ -214,7 +214,7 @@
 
 <script>
 (() => {
-  const VERSION = '0.5.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '0.5.1'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -242,6 +242,7 @@
     tool: 'brush',
     size: 8,
     alpha: 1,
+    malpha: 0.4, // マーカーの濃さ(マーカーを選んでいる間の「不透明」スライダー)
     color: '#ff7fb3',
     oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
     ocolor: '#ffffff', // oedge が custom のときのフチ色
@@ -312,7 +313,7 @@
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
         // 縁取りを続けて描いている途中は、まとまり全体を temp に描き直しているので、始まる前の画像の上に重ねる
-        const cont = stroke && i === stroke.layer && groupKind(stroke) && L[i].grp.length && L[i].kind === stroke.tool;
+        const cont = stroke && i === stroke.layer && groupKind(stroke) && L[i].grp.length && L[i].kind === groupKind(stroke);
         vctx.drawImage(cont ? L[i].below : layers[i], 0, 0);
         if (board.collab) board.collab.renderLayer(vctx, i); // 確定待ちの自分の線・相手の描きかけ
         if (stroke && i === stroke.layer && stroke.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
@@ -345,10 +346,17 @@
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
   // 線の種類(デコポコ プラス): brush / outline / eraser / neon(光る)/ marker(半透明、重ねても濃くならない)
-  const MARKER_ALPHA = 0.4;
+  const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
   const neonBlur = op => op.size * 1.5 + 6;
-  // まとまりになる線の種類。縁取りはフチをまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る
-  const groupKind = op => op && op.kind !== 'clear' && op.kind !== 'break' && (op.tool === 'outline' || op.tool === 'marker') ? op.tool : null;
+  // まとまりになる線の種類。縁取りはフチをまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る。
+  // マーカーは濃さが同じものだけをまとめる(濃さを変えたら別のまとまり)ので、種類に濃さを含める
+  const groupKind = op => {
+    if (!op || op.kind === 'clear' || op.kind === 'break') return null;
+    if (op.tool === 'outline') return 'outline';
+    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
+    return null;
+  };
+  const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
   function strokeRadius(op) {
     if (op.tool === 'outline') return (op.size + op.osize * 2) / 2 + 2;
     if (op.tool === 'neon') return op.size / 2 + neonBlur(op) * 1.5 + 2;
@@ -360,6 +368,28 @@
     const m = v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0');
     return '#' + m(r) + m(g) + m(b);
   }
+  // マーカーのペン先: 平たい(チゼル型)ペン先を斜め 75° に固定して、なぞった跡を塗る。
+  // 横に引くと太く、縦に引くと細く、線の端は斜めに切れる(2026-10-16 ぽこの見本)
+  const CHISEL_ANGLE = -Math.PI * 5 / 12;
+  function chiselPath(ctx, pts, size, color) {
+    const nx = Math.cos(CHISEL_ANGLE) * size / 2, ny = Math.sin(CHISEL_ANGLE) * size / 2;
+    ctx.save();
+    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+    if (pts.length === 1) {
+      const p = pts[0];
+      ctx.lineWidth = Math.max(2, size * 0.15); ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(p.x - nx, p.y - ny); ctx.stroke();
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], q = pts[i];
+      // 1 区間ずつ塗る(まとめて 1 つのパスにすると、向きの違う区間が打ち消し合って穴があく)。境目の隙間は 1px の線で埋める
+      ctx.beginPath();
+      ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(q.x + nx, q.y + ny);
+      ctx.lineTo(q.x - nx, q.y - ny); ctx.lineTo(p.x - nx, p.y - ny); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
   // ネオン: 線の色でぼかして光らせ、中心に白っぽい芯を描く
   function paintNeon(c, op) {
     c.save();
@@ -370,14 +400,14 @@
     drawPath(c, op.pts, Math.max(1, op.size * 0.4), mixWhite(op.color, 0.7), op.alpha);
   }
   function paintStrokeTo(c, op) {
-    if (op.tool === 'marker') return paintGroupTo(c, [op], 'marker');
+    if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
     if (op.tool === 'neon') return paintNeon(c, op);
     if (op.tool === 'outline') drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
   // まとまりを描く。縁取り: フチを全部 → 線を全部。マーカー: 不透明で全部描いてから 40% で 1 回だけ重ねる
   function paintGroupTo(c, grp, kind) {
-    if (kind === 'marker') {
+    if (isMarkerKind(kind)) {
       // 線の周りだけを作業用に使う(スマホで長いマーカーを描いても毎回全面を塗り直さない)
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const op of grp) {
@@ -389,8 +419,8 @@
       if (w <= 0 || h <= 0) return;
       const m = mk.getContext('2d');
       m.clearRect(x0, y0, w, h);
-      for (const op of grp) drawPath(m, op.pts, op.size, op.color, 1);
-      c.save(); c.globalAlpha = MARKER_ALPHA; c.drawImage(mk, x0, y0, w, h, x0, y0, w, h); c.restore();
+      for (const op of grp) chiselPath(m, op.pts, op.size, op.color);
+      c.save(); c.globalAlpha = grp[0].alpha ?? MARKER_ALPHA; c.drawImage(mk, x0, y0, w, h, x0, y0, w, h); c.restore();
       return;
     }
     for (const op of grp) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
@@ -570,7 +600,7 @@
     view.setPointerCapture(e.pointerId);
     stroke = {
       kind: 'stroke', layer: state.active, tool: state.tool, color: state.color,
-      alpha: state.tool === 'marker' ? MARKER_ALPHA : state.alpha,
+      alpha: state.tool === 'marker' ? state.malpha : state.alpha,
       size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
       pts: [toBoard(e)], pid: e.pointerId, begun: false, sx: e.clientX, sy: e.clientY,
     };
@@ -624,7 +654,7 @@
       // 確定はサーバーの返事で行う。それまでは途中の表示を「確定待ち」として出しておく
       // 確定待ちの表示はその線 1 本だけ(マーカーのまとまり全体を渡すと、レイヤーの上に二重に重なって濃く見える)
       let pend = temp;
-      if (groupKind(op) === 'marker') {
+      if (isMarkerKind(groupKind(op))) {
         const c = temp.getContext('2d');
         c.clearRect(0, 0, W, H);
         paintStrokeTo(c, op);
@@ -674,9 +704,9 @@
   });
   function setTool(t) {
     state.tool = t;
-    // マーカーは 40% 固定なので不透明度のスライダーは使わない
-    $('alpha').disabled = t === 'marker';
-    $('alphaVal').textContent = t === 'marker' ? '40' : Math.round(state.alpha * 100);
+    // マーカーを選んでいる間は「不透明」スライダーがマーカーの濃さ(ペンの不透明度とは別に覚える)
+    const a = Math.round((t === 'marker' ? state.malpha : state.alpha) * 100);
+    $('alpha').value = a; $('alphaVal').textContent = a;
     for (const b of toolsEl.children) b.classList.toggle('on', b.dataset.tool === t);
     updateCursorSize(); save();
   }
@@ -689,7 +719,12 @@
     });
   };
   bindRange('size', 'sizeVal', 'size', 1);
-  bindRange('alpha', 'alphaVal', 'alpha', 0.01);
+  $('alpha').addEventListener('input', () => {
+    const v = +$('alpha').value;
+    if (state.tool === 'marker') state.malpha = v / 100; else state.alpha = v / 100;
+    $('alphaVal').textContent = v;
+    save();
+  });
   bindRange('osize', 'osizeVal', 'osize', 1);
   // ---------- colors ----------
   const isHex = c => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c);
@@ -973,7 +1008,7 @@
       try {
         const data = {
           settings: {
-            tool: state.tool, size: state.size, alpha: state.alpha, color: state.color,
+            tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
             oedge: state.oedge, ocolor: state.ocolor, osize: state.osize, active: state.active,
             visible: state.visible, history: state.history, fab: state.fab,
             uiHidden: state.uiHidden, panelOpen: state.panelOpen,
@@ -997,6 +1032,7 @@
       const s = data.settings;
       Object.assign(state, {
         tool: s.tool || 'brush', size: s.size || 8, alpha: s.alpha ?? 1,
+        malpha: typeof s.malpha === 'number' && s.malpha >= 0.05 && s.malpha <= 1 ? s.malpha : MARKER_ALPHA,
         color: isHex(s.color) ? s.color : state.color,
         oedge: ['auto', 'white', 'black', 'custom'].includes(s.oedge) ? s.oedge : 'auto',
         ocolor: isHex(s.ocolor) ? s.ocolor : '#ffffff',
