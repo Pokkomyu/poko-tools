@@ -448,7 +448,7 @@ Authorization: Bearer <TURN キーの API トークン>
 - TURN キー ID と API トークンは pokonya の `.env`(`DECO_TURN_KEY_ID` / `DECO_TURN_KEY_API_TOKEN`)。使用量を読む Analytics 用のトークンは別に(`DECO_CF_ACCOUNT_ID` / `DECO_CF_ANALYTICS_TOKEN`、Account Analytics の読み取りだけ)。ぶらんちが Cloudflare のダッシュボードで作って入れる(`.env.example` には名前だけ)。ログ・応答・監査に出さない
 - **主体(ホスト鍵 / OBS 鍵 / 席キー)ごとに 1 つ** 発行する(`opened` / `joined` のとき)。`customIdentifier` に部屋のハッシュの先頭を入れ、使用量を部屋ごとに見られるようにする(暴走した部屋だけ止められる)
 - **TTL は 24.5 時間**(部屋の最長 12 時間 + 延長 1 回 12 時間 + 余裕 30 分。Cloudflare の上限 48 時間の内)。認証情報は途中で配り直さない: 差し替えるには `restartIce`(offer / answer のやり直し)が要り、TTL が切れると Cloudflare はその allocation を切る(FAQ)。だから延長は 1 回まで、`extend` はサーバーの期限を延ばすだけ。長い TTL の悪用は 12.6 の実測の監視で止める
-- **失効させるとき**: キック・断る・招待のやり直し(古い招待で入った人の分)・部屋を閉じる・部屋の破棄(ホスト不在 10 分、最長時間)。失効の API 呼び出しは非同期で、失敗したら 3 回まで再試行し、それでも駄目なら TTL 切れに任せる(ログに件数だけ)。失効 API が張っている最中の allocation をすぐ止めるかは文書に無い(確認点 7)。キックの効き目は「ホストが `pc.close()` する」で足りていて、失効は「その認証情報で別の中継をさせない」ためのもの
+- **失効させるとき**: キック・断る・招待のやり直し(古い招待で入った人の分)・部屋を閉じる・部屋の破棄(ホスト不在 10 分、最長時間)。失効の API 呼び出しは非同期で、失敗したら 3 回まで再試行し、それでも駄目なら TTL 切れに任せる(ログに件数だけ)。失効 API が張っている最中の allocation をすぐ止めるかは文書に無い(確認点 7、段階 a で確かめる)。キックの効き目は「ホストが `pc.close()` する」で足りていて、失効は「その認証情報で別の中継をさせない」ためのもの
 - **緊急停止**: pokonya に「発行済みの認証情報を全部失効 + 新しい発行を止める」運用コマンドを用意する(`stats` と同じ並び)。さらに、ダッシュボードで TURN キーを消せばそのキーで出した認証情報が全部無効になるか(確認点 8)。効くならそれが最後の止め方
 - クライアントは `iceServers` のうち **`turn:` / `turns:` のホストが `turn.cloudflare.com` のものだけ** 使う。`stun:` は relay だけなら要らないので捨てる。`:53` の URL も捨てる(ブラウザが塞ぐことが知られている、と Cloudflare の文書にある。今の応答には無い)
 - `RTCPeerConnection({ iceServers, iceTransportPolicy: "relay" })`。host / srflx の候補は作られないので、SDP にも ICE 候補にもローカル IP は載らない。relay 候補の関連アドレス(`raddr`)には本人の外向き IP が入りうるので、12.4 のとおり pokonya が中継前に伏せる
@@ -475,17 +475,22 @@ Authorization: Bearer <TURN キーの API トークン>
 
 1,000 GB は「4 人がずっと描き続ける部屋」で約 1,500 時間/月(毎日 50 時間)に当たる。普通の使い方では無料枠に届かない。危ないのは **認証情報の悪用**(発行された認証情報で、一緒にデコると無関係な通信を中継される。1 本 50〜100 Mbps 流せる)で、12.6 の実測の監視と 12.9 の上限で止める。
 
-**課金について確認すること**(段階 0 で、ぶらんちが Cloudflare のダッシュボードで):
+**課金と規約の確認点**(2026-10-17 に Cloudflare の公開文書で調べた結果。「文書で確定」は調べて決着、「段階 0 / a で確認」は文書に書かれていない):
 
-1. TURN キーを作るのに支払い方法(クレジットカード)の登録が要るか。要るなら、無料枠を超えた分は自動で請求される
-2. **使いすぎの上限(請求の上限)を Cloudflare 側で掛けられるか**。掛けられなければ、請求額の通知(Billing の通知)を設定し、pokonya 側の監視(12.6)を必ず入れる
-3. 1,000 GB の無料枠がこのアカウント(どの Cloudflare アカウントで作るか)で使えるか、ダッシュボードの表示で確かめる
-4. **両方が relay のときの数え方**: ゲスト → Cloudflare → ホストの中継は、受け取る側の egress だけが数えられるはず(課金の定義は edge → TURN クライアント)。段階 a で 10MB 送って、分析の数字が 10MB 強(期待どおり)か 20MB 強かを見る
-5. Analytics 用トークン(Account Analytics の読み取りだけ)を作り、GraphQL で egress が取れることを確かめる(12.6 の監視の前提)
-6. 利用規約で、配信ツールの一般公開(不特定多数のブラウザ)に使ってよいか
-7. 失効 API で、張っている途中の allocation が実際に止まるか(段階 a)
-8. TURN キーを消すと、そのキーで出した認証情報が全部無効になるか(段階 0。緊急停止の最後の手段)
-9. TTL 24.5 時間の発行が通るか、`restartIce` なしで 12 時間以上つながり続けるか(段階 a)
+| # | 確認点 | 文書で分かったこと | 残る作業 |
+|---|---|---|---|
+| 1 | 支払い方法の登録が要るか | 製品ページは「クレジットカード不要で始められる」。セルフサーブの支払いはクレジットカード(TURN FAQ)。**カード無しで無料枠を超えたときに止まるのか請求されるのかは書かれていない** | 段階 0: ダッシュボードで TURN キーを作るときに支払い方法を求められるか見る。カード無しで作れて、超えたら止まるなら、それが一番安全な上限になる |
+| 2 | 使いすぎの上限を掛けられるか | **文書で確定: 掛けられない**。Budget alerts(Manage Account > Billing > Billable Usage)はメールで知らせるだけで、止めはしない。使用量の集計は日次なので通知は翌日。Pay-as-you-go のアカウントだけで、既定で $10 の通知が入る | 段階 0: 通知を $1 程度に下げる。止めるのは pokonya 側の監視(12.6)だけが頼り、を前提にする |
+| 3 | 無料枠 1,000 GB | **文書で確定**: 毎月 1,000 GB 無料、SFU と共有、請求は SFU と TURN で 1 行 | 段階 0: ダッシュボードの表示を見る(念のため) |
+| 4 | 両方が relay のときの数え方 | 課金は「Cloudflare の edge から TURN クライアントへ送ったデータ」、ingress は無料。FAQ の図も client 向きだけが課金。**TURN どうしの中継について明記は無い** | 段階 a: 10MB 送って分析の egress が 10MB 強(期待)か 20MB 強かを見る |
+| 5 | 使用量を API で取れるか | **文書で確定: 取れる**。GraphQL `https://api.cloudflare.com/client/v4/graphql` の `callsTurnUsageAdaptiveGroups`(`egressBytes` / `ingressBytes` / `concurrentConnections`)、時間は `datetimeMinute` / `datetimeFiveMinutes` など、`keyId` / `customIdentifier` / `username` で絞れる。トークンの権限は **Account Analytics**。分析には 30 秒以内に出る(FAQ) | 段階 0: Account Analytics だけのトークンを作る |
+| 6 | 規約で使ってよいか | Service-Specific Terms(2026-09-28 版)の Realtime の節: 許される使い方は **「自分の Internet Properties で video call の機能を提供する」**。禁止は電話網につなぐ通信サービス、違法・有害な内容。Cloudflare は同時通話数を一時的に制限できる。**お絵かきのデータだけを中継する使い方は文言上「video call」に当たらず、グレー**(FAQ ではロボットの遠隔操作など映像以外も「合う使い方」に挙げている)。また github.io の Pages が「自分の Internet Properties」に当たるかも明記は無い | 未決 13 |
+| 7 | 失効 API の効き目 | 失効 API(`POST …/credentials/<username>/revoke` → 204)はある。**張っている最中の allocation を止めるかは書かれていない**。TTL が途中で切れた場合は「課金と記録をすぐ止め、少し後に切断する」と FAQ にある | 段階 a: allocation を張ったまま失効させ、切れるか・分析の egress が止まるかを見る |
+| 8 | TURN キーを消すと認証情報が全部無効になるか | キーの削除 API(`DELETE /accounts/{account_id}/calls/turn_keys/{key_id}`、Calls Write 権限)はある。**張っている allocation への効き目は書かれていない** | 段階 a: 開発用のキーで確かめる(本番のキーでは試さない) |
+| 9 | TTL 24.5 時間 | **文書で確定**: 認証情報の期限は 48 時間先まで設定できる。allocation の長さに上限は無いが、有効な認証情報で更新し続ける必要があり、48 時間を超えるなら認証情報の更新が要る | 段階 a: `restartIce` なしで 12 時間以上つながり続けるか(長時間試験) |
+| 10 | `customIdentifier` の付け方 | GraphQL の dimension にはあるが、**認証情報の発行 API の文書に付け方が載っていない**(本文は `ttl` だけ) | 付けられなければ、pokonya が持つ「username → 部屋」の対応で GraphQL を `username` で絞る(12.6 の部屋ごとの停止はこれで足りる) |
+
+そのほか文書で分かったこと: 認証情報の発行は 500 回/秒から(上限の定めは無い)。中継アドレスは IPv4 だけ。`turn.cloudflare.com` の IP は変わることがある(許可リストに IP を書く運用はしない)。WebRTC で使う場合、中継される中身は DTLS で暗号化されていて Cloudflare は読めず、扱うのはクライアントの IP・ポート・時間などのメタデータだけ(FAQ)。privacy に書くときの根拠にする。
 
 ### 12.6 参加前の接続チェックと予算
 
@@ -635,8 +640,8 @@ pokonya は線を通さないので、守るのは「部屋の数」「接続の
 
 | 段階 | repo | 内容 | 前提 |
 |---|---|---|---|
-| 0 | Cloudflare(ぶらんち) | `.env.dev` が `.gitignore` にあることを確かめる。12.5 の確認点 1〜3・6 を見て、TURN キーと Analytics 用トークンを作る(確認点 5・8 もここで)。開発用の pokonya の `.env.dev` に入れる(本番の `.env` は段階 d)。キーとトークンはぶらんちだけが扱い、codex には渡さない | この設計の承認 |
-| a | 使い捨て(scratchpad)+ 開発用 pokonya | 認証情報を出すだけの最小の口と、2 画面の DataChannel(relay だけ)の実験。ぽこの PC の Chrome ↔ OBS の遅れ、スマホのテザリング、会社網に近い条件(UDP を塞いで 443 だけ)、Memory Saver を入れた裏のタブで 30 分。確認点 4・7・9(TTL 24.5 時間の発行、`restartIce` なしで 12 時間以上つながるか)もここで見る。開発用 pokonya は `.env.dev` を読んで起動するだけで、codex はキーを読まない・表示しない | 0 |
+| 0 | Cloudflare(ぶらんち) | `.env.dev` が `.gitignore` にあることを確かめる。12.5 の確認点 1(支払い方法)・2(通知を $1 程度に)・3 をダッシュボードで見て、開発用の TURN キーと Analytics 用トークン(Account Analytics だけ)を作る。開発用の pokonya の `.env.dev` に入れる(本番の `.env` は段階 d)。キーとトークンはぶらんちだけが扱い、codex には渡さない | この設計の承認 |
+| a | 使い捨て(scratchpad)+ 開発用 pokonya | 認証情報を出すだけの最小の口と、2 画面の DataChannel(relay だけ)の実験。ぽこの PC の Chrome ↔ OBS の遅れ、スマホのテザリング、会社網に近い条件(UDP を塞いで 443 だけ)、Memory Saver を入れた裏のタブで 30 分。確認点 4・7・8・9(両側 relay の数え方、失効とキー削除の効き目、12 時間以上つながるか)もここで見る(キー削除は開発用のキーで)。開発用 pokonya は `.env.dev` を読んで起動するだけで、codex はキーを読まない・表示しない | 0 |
 | b | pokonya | `deco_signal/`、pytest。本番反映は d でまとめて | a |
 | c | poko-tools main | room の JS 移植(テストを移す)、WebRTC の通信、接続チェックの UI、承認・キック、保存と復元。検証サーバー(scratchpad の e2e にシグナリングを足す。Cloudflare は開発用のキーで実物を使う)と headless Chrome 5 画面で、§11 と同じ項目 + 承認待ち・断る・キックで戻れない・ホストの再読み込みで同じ席に戻る・10 分で終わる・版違い・× の表示・承認待ち 5 分の放置・悪用の閾値で全失効(GraphQL はモック) | b |
 | d | wp-poko + 本番 | nginx、privacy / terms、本番の `.env` に TURN キー(ぶらんち)、pokonya image 作り直し(**必ず c を Pages に出すより先**)。そのあと Pages に c を出す | b, c、文言はぽこ確認 |
@@ -669,3 +674,4 @@ pokonya は線を通さないので、守るのは「部屋の数」「接続の
 10. **TURN の予算** — 推奨: 実測で月 600 GB に達したら新しい部屋を止め、800 GB で通知(無料枠 1,000 GB の手前で止める)。悪用の検知は直近 5 分 540MB で全失効。課金の上限を Cloudflare 側で掛けられるか(確認点 2)で見直す
 11. **どの Cloudflare アカウントで作るか** — 推奨: ぶらんちのアカウント(hoshino-poko.com の DNS は Cloudflare ではないので、DNS とは無関係に作れる)。請求先を誰にするかはぽこと相談
 12. **合言葉の承認** — 推奨: 承認待ちのゲストに 4 桁の合言葉を出し、ホストの一覧に同じ数字を並べる(名前欄は作らない)
+13. **Cloudflare の規約(確認点 6)** — 許される使い方の文言は「video call の機能」で、お絵かきのデータだけの中継はグレー。推奨: 段階 0 の前に Cloudflare に問い合わせる(Discord の Cloudflare Developers やサポート)か、文言どおりでなくても FAQ の「映像以外の使い方」を根拠に進めるかを、ぶらんちが決める。だめなら自前の TURN(coturn を cnh-vps 以外に)か、プラス版と同じ WS 中継に戻る
