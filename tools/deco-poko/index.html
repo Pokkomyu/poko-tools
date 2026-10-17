@@ -214,7 +214,7 @@
 
 <script>
 (() => {
-  const VERSION = '0.5.1'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.0.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -345,7 +345,7 @@
     paintStrokeTo(c, op);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
-  // 線の種類(デコポコ プラス): brush / outline / eraser / neon(光る)/ marker(半透明、重ねても濃くならない)
+  // 線の種類: brush / outline / eraser / neon(光る)/ marker(半透明、重ねても濃くならない)
   const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
   const neonBlur = op => op.size * 1.5 + 6;
   // まとまりになる線の種類。縁取りはフチをまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る。
@@ -1071,7 +1071,7 @@
     setPanelOpen(state.panelOpen);
   }
 
-  // ---------- collab.js(有償版の一緒にデコる)から使う口 ----------
+  // ---------- 一緒にデコる(collab.js。今はプラス版の Web 版だけ)から使う口。1 人で描くときは board.collab が null ----------
   const board = {
     collab: null, // 一緒にデコる中は collab.js のオブジェクト(begin / points / end / clear / undo / redo / renderLayer / canDraw / maxPoints)
     LAYER_COUNT, state, layers, panel,
