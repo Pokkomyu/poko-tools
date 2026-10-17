@@ -6,5 +6,5 @@
 | `requirements/<tool>.md` | ツールごとの仕様(実装の入力) |
 | `ux/<tool>/` | ワイヤーフレーム画像 |
 | `development/` | 実装規約 |
-| `architecture/` | 仕組みの設計(サーバーと連携する機能など。`deco-poko-collab.md` = デコポコの一緒にデコる) |
+| `architecture/` | 仕組みの設計(サーバーと連携する機能など。`deco-poko-collab.md` = デコポコの一緒にデコる、`deco-poko-obs-vts.md` = デコポコのスポイトと立ち絵に付ける) |
 | `release/` | BOOTH 出品チェックリスト、GitHub Pages 公開、有償版(edition)の運用、有償版 zip の受け渡し repo(`plus-dist.md`) |
