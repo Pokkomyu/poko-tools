@@ -1,0 +1,274 @@
+/* ===== ぽこ様式(共通化するまではツールごとに持つ) ===== */
+:root {
+  --poko-pink: #ff8fc7;
+  --poko-pink-deep: #ff5fae;
+  --poko-white: #ffffff;
+  --poko-blue: #6cb8ff;
+  --poko-red: #ff6b6b;
+  --poko-purple: #b98cff;
+  --poko-yellow: #ffe066;
+  --poko-ink: #3b2b45;
+  --poko-preview-bg: #ffd0f5;
+  --poko-font: "M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN",
+    "BIZ UDPGothic", "Meiryo", system-ui, sans-serif;
+  --slot: 300px;      /* ひし形の対角線 */
+  --slot-gap: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body.preview { background: var(--poko-preview-bg); }
+
+/* 1920x1080 固定ステージ。app.js がウィンドウに合わせて拡大縮小する */
+.stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: 0 0;
+  font-family: var(--poko-font);
+  font-weight: 800;
+  color: var(--poko-ink);
+}
+
+[hidden] { display: none !important; }
+
+/* ===== スロット(配信に映す領域: 左 1300px) ===== */
+.slots {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1300px;
+  height: 1080px;
+}
+
+.slot {
+  position: absolute;
+  width: var(--slot);
+  height: var(--slot);
+  margin: calc(var(--slot) / -2) 0 0 calc(var(--slot) / -2); /* left/top をひし形の中心にする */
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: left .35s ease, top .35s ease;
+}
+/* ひし形の枠 = 45° 回した正方形 */
+.slot::before {
+  content: "";
+  position: absolute;
+  left: 14.6%;
+  top: 14.6%;
+  width: 70.7%;
+  height: 70.7%;
+  border: 7px solid var(--poko-ink);
+  border-radius: 18px;
+  background: var(--poko-white);
+  box-shadow: inset 0 0 0 6px var(--poko-pink);
+  transform: rotate(45deg);
+}
+.slot.k::before { box-shadow: inset 0 0 0 6px var(--poko-red); }
+.slot.s::before { box-shadow: inset 0 0 0 6px var(--poko-blue); }
+.slot.spinning::before { background: #fff3fa; }
+.slot.stopped::before { animation: slot-pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes slot-pop { 0% { transform: rotate(45deg) scale(.86); } 100% { transform: rotate(45deg) scale(1); } }
+
+.slot-in {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 66%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+.slot-name {
+  line-height: 1.18;
+  white-space: nowrap;
+  /* ゲーム画面の上でも読めるよう白で縁取る */
+  paint-order: stroke fill;
+  -webkit-text-stroke: 6px var(--poko-white);
+}
+.slot-name.empty { font-size: 72px; opacity: .35; }
+.slot-char { font-size: 17px; font-weight: 700; opacity: .7; white-space: nowrap; }
+.slot-char:empty { display: none; }
+
+/* 横並び */
+.layout-row .slot { top: 540px; }
+.layout-row .slot[data-i="0"] { left: calc(650px - 1.5 * (var(--slot) + var(--slot-gap))); }
+.layout-row .slot[data-i="1"] { left: calc(650px - .5 * (var(--slot) + var(--slot-gap))); }
+.layout-row .slot[data-i="2"] { left: calc(650px + .5 * (var(--slot) + var(--slot-gap))); }
+.layout-row .slot[data-i="3"] { left: calc(650px + 1.5 * (var(--slot) + var(--slot-gap))); }
+
+/* ひし形(ゲームの装備画面と同じ 上・左・右・下) */
+.layout-diamond .slot[data-i="0"] { left: 650px; top: calc(540px - var(--slot) / 2 - var(--slot-gap) / 2); }
+.layout-diamond .slot[data-i="1"] { left: calc(650px - var(--slot) / 2 - var(--slot-gap) / 2); top: 540px; }
+.layout-diamond .slot[data-i="2"] { left: calc(650px + var(--slot) / 2 + var(--slot-gap) / 2); top: 540px; }
+.layout-diamond .slot[data-i="3"] { left: 650px; top: calc(540px + var(--slot) / 2 + var(--slot-gap) / 2); }
+
+.notice {
+  position: absolute;
+  left: 24px;
+  bottom: 14px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  opacity: .55;
+}
+
+/* ===== 操作パネル ===== */
+.control {
+  position: absolute;
+  left: 1340px;
+  top: 60px;
+  width: 550px;
+  height: 960px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 22px;
+  border: 4px solid var(--poko-ink);
+  border-radius: 22px;
+  background: #fff7fc;
+  font-size: 22px;
+}
+.control-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 24px; }
+.control-note { font-size: 16px; opacity: .6; }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+.toggles { display: flex; gap: 12px; }
+.seg { display: flex; flex: 1; border: 3px solid var(--poko-ink); border-radius: 12px; overflow: hidden; }
+.seg button { flex: 1; padding: 8px 0; border: 0; background: var(--poko-white); font-size: 20px; }
+.seg button + button { border-left: 3px solid var(--poko-ink); }
+.seg button.on { background: var(--poko-yellow); }
+
+.rows { flex: 1; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 14px;
+  background: var(--poko-white);
+}
+.row.locked { background: #fff4c2; }
+.row-n {
+  grid-row: 1 / 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--poko-ink);
+  color: var(--poko-white);
+  font-size: 18px;
+  line-height: 34px;
+  text-align: center;
+}
+.row-name { font-size: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { grid-column: 2; font-size: 14px; font-weight: 700; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-btns { grid-column: 3; grid-row: 1 / 3; display: flex; gap: 6px; }
+
+.btn-small {
+  padding: 4px 12px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 10px;
+  background: var(--poko-white);
+  font-size: 17px;
+  white-space: nowrap;
+}
+.btn-small:disabled { opacity: .35; cursor: default; }
+.btn-small.copy { background: #dff0ff; }
+.btn-small.on { background: var(--poko-yellow); }
+
+.options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; font-size: 19px; }
+.options input { width: 20px; height: 20px; vertical-align: -3px; }
+.options .btn-small { margin-left: auto; }
+.pool-info { margin: -6px 0 0; font-size: 16px; font-weight: 700; opacity: .7; }
+.pool-info.warn { color: #d43a3a; opacity: 1; }
+
+.actions { display: flex; }
+.btn {
+  flex: 1;
+  padding: 16px 0;
+  border: 4px solid var(--poko-ink);
+  border-radius: 18px;
+  font-size: 30px;
+  box-shadow: 0 5px 0 var(--poko-ink);
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--poko-ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn-start { background: var(--poko-pink); }
+
+.foot { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; opacity: .55; }
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: var(--poko-ink);
+  color: var(--poko-white);
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+/* パークの設定 */
+.pool {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: #fff7fc;
+}
+.pool-head { display: flex; justify-content: space-between; align-items: center; font-size: 24px; }
+.pool-search {
+  padding: 8px 12px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 19px;
+}
+.pool-bulk { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.pool-bulk span { margin-right: auto; white-space: nowrap; }
+.pool-bulk .btn-small { padding: 3px 8px; font-size: 15px; }
+.pool-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 3px solid var(--poko-ink);
+  border-radius: 12px;
+  background: var(--poko-white);
+}
+.pool-list label { display: flex; min-width: 0; align-items: baseline; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 18px; cursor: pointer; }
+.pool-list label:hover { background: #fff0f8; }
+.pool-list input { width: 18px; height: 18px; flex: none; align-self: center; }
+.pool-list .name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-list .en { min-width: 0; font-size: 13px; font-weight: 700; opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-list .off { opacity: .45; }
+.pool-hint { margin: 0; font-size: 14px; font-weight: 700; opacity: .6; }
