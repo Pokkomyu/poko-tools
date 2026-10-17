@@ -62,6 +62,8 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.4);
     backdrop-filter: blur(8px);
     font-size: 12px; line-height: 1.4;
+    max-height: calc(100vh - 8px); overflow-y: auto; /* 小さいウィンドウでも下の欄まで届くように */
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent;
   }
   #panel.closed { display: none; }
   .row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
@@ -73,6 +75,20 @@
     background: rgba(255,255,255,.04); color: var(--ink); font: inherit; cursor: pointer;
   }
   .seg button.on { background: var(--accent-soft); border-color: var(--accent); }
+  #tools { flex-wrap: wrap; }
+  #tools button { flex: 1 0 28%; }
+  .edot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 3px; vertical-align: middle;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.6); }
+  /* 画面に出る小パレット(右クリック / 長押し) */
+  #qp { position: fixed; z-index: 30; width: 252px; padding: 8px; border-radius: 12px; background: var(--panel);
+    border: 1px solid var(--panel-edge); box-shadow: 0 8px 24px rgba(0,0,0,.45); color: var(--ink); font-size: 12px; }
+  #qp .qtools { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-bottom: 6px; }
+  #qp .qtools button { padding: 5px 0; white-space: nowrap; letter-spacing: -.02em; border-radius: 7px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.04);
+    color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+  #qp .qtools button.on { background: var(--accent-soft); border-color: var(--accent); }
+  #qp .qsw { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+  #qp .qsw div { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.5); cursor: pointer; }
+  #qp .qsw div.on { outline: 2px solid var(--accent); outline-offset: 1px; }
   .btn:hover, .seg button:hover { background: rgba(255,255,255,.1); }
   .btn:disabled { opacity: .35; cursor: default; }
   input[type=range] { flex: 1; accent-color: var(--accent); margin: 0; }
@@ -122,6 +138,7 @@
 <canvas id="view"></canvas>
 <div id="cursor"></div>
 
+<div id="qp" hidden></div>
 <div id="ui">
   <div id="fab" title="ドラッグで移動 / クリックで開閉"><div class="dot"></div></div>
   <div id="panel" class="closed">
@@ -131,6 +148,8 @@
         <button data-tool="brush">ペン</button>
         <button data-tool="outline">縁取り</button>
         <button data-tool="eraser">消しゴム</button>
+        <button data-tool="neon" title="線の色で光るペン">ネオン</button>
+        <button data-tool="marker" title="半透明。続けて描いても重なりが濃くならない">マーカー</button>
       </div>
     </div>
     <div class="row">
@@ -158,6 +177,7 @@
         <button data-edge="auto">自動</button>
         <button data-edge="white">白</button>
         <button data-edge="black">黒</button>
+        <button data-edge="custom" title="フチの色を自由に選ぶ">自由<span class="edot" id="ocolorDot"></span></button>
       </div>
     </div>
     <div class="row">
@@ -194,11 +214,13 @@
 
 <script>
 (() => {
-  const VERSION = '0.2.2'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.0.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
-  const LS_KEY = 'poko-deco-poko-v1' + (BOARD_ID ? ':' + BOARD_ID : '');
+  // 一緒にデコるの OBS 用 / 招待 URL の画面は、ブラウザ版(1 人で描く絵)と保存を分ける(同じブラウザで開いても絵を上書きしない)
+  const PLUS_VIA = (location.pathname.match(/^\/tools\/plus\/(obs|guest)\//) || [])[1];
+  const LS_KEY = 'poko-deco-poko-v1' + (PLUS_VIA ? ':' + PLUS_VIA : '') + (BOARD_ID ? ':' + BOARD_ID : '');
   const LAYER_COUNT = 3;
   const OPS_MAX = 100; // 戻せる回数。超えた古い操作は base に焼き込む
   const PRESETS = ['#ffffff', '#000000', '#ff7fb3', '#ff4d4d', '#ffcc33', '#5ad66b', '#4aa3ff', '#b57bff'];
@@ -210,15 +232,20 @@
   const fab = document.getElementById('fab');
   const panel = document.getElementById('panel');
 
-  let W = 0, H = 0;
+  let W = 0, H = 0;   // 絵の大きさ(1 人のときはウィンドウ、一緒にデコる中は 1920x1080 の論理座標)
+  let VW = 0, VH = 0; // ウィンドウ(表示)の大きさ
+  let stage = null;   // 一緒にデコる中だけ {w: 1920, h: 1080}。collab.js が setStage で切り替える
+  let vs = 1, vox = 0, voy = 0; // 絵 → 表示の拡大率とずらし
 
   // ---------- state ----------
   const state = {
     tool: 'brush',
     size: 8,
     alpha: 1,
+    malpha: 0.4, // マーカーの濃さ(マーカーを選んでいる間の「不透明」スライダー)
     color: '#ff7fb3',
-    oedge: 'auto', // 'auto' | 'white' | 'black'
+    oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
+    ocolor: '#ffffff', // oedge が custom のときのフチ色
     osize: 4,
     active: 0,
     visible: [true, true, true],
@@ -243,18 +270,24 @@
   //   grp   = 今続いている縁取りの op(この間はフチを全部下に、線を全部上に描く)
   //   below = その縁取りが始まる前の画像(grp があるときだけ使う)
   // を持つ。L = 表示しているレイヤー、B = base(戻せない部分)。base をまたいで続く縁取りもつながる
+  // kind = まとまりの種類(outline: フチをまとめる / marker: 重ねても濃くならない)
   const L = [], B = [];
-  for (let i = 0; i < LAYER_COUNT; i++) { L.push({ grp: [], below: null }); B.push({ grp: [], below: null }); }
+  for (let i = 0; i < LAYER_COUNT; i++) { L.push({ grp: [], below: null, kind: null }); B.push({ grp: [], below: null, kind: null }); }
 
   let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
   let scratch = null; // 描き直しで線 1 本を組み立てる作業用
+  let mk = null;      // マーカーのまとまりを不透明で描いてから 40% で重ねる作業用
 
-  function resize() {
-    const nw = window.innerWidth, nh = window.innerHeight;
-    if (nw === W && nh === H) return;
+  function resize(force) {
+    VW = window.innerWidth; VH = window.innerHeight;
+    if (view.width !== VW || view.height !== VH) { view.width = VW; view.height = VH; }
+    const nw = stage ? stage.w : VW, nh = stage ? stage.h : VH;
+    vs = stage ? Math.min(VW / nw, VH / nh) : 1;
+    vox = stage ? (VW - nw * vs) / 2 : 0; voy = stage ? (VH - nh * vs) / 2 : 0;
+    updateCursorSize();
+    if (!force && nw === W && nh === H) { render(); return; }
     const ow = W, oh = H;
     W = nw; H = nh;
-    view.width = W; view.height = H;
     const grow = (old) => {
       const c = makeCanvas();
       if (old && ow && oh) c.getContext('2d').drawImage(old, 0, 0);
@@ -264,7 +297,7 @@
       layers[i] = grow(layers[i]); base[i] = grow(base[i]);
       L[i].below = grow(L[i].below); B[i].below = grow(B[i].below);
     }
-    temp = grow(null); scratch = grow(null);
+    temp = grow(null); scratch = grow(null); mk = grow(null);
     render();
   }
 
@@ -274,12 +307,15 @@
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
-      vctx.clearRect(0, 0, W, H);
+      vctx.setTransform(1, 0, 0, 1, 0, 0);
+      vctx.clearRect(0, 0, VW, VH);
+      vctx.setTransform(vs, 0, 0, vs, vox, voy);
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
         // 縁取りを続けて描いている途中は、まとまり全体を temp に描き直しているので、始まる前の画像の上に重ねる
-        const cont = stroke && i === stroke.layer && stroke.tool === 'outline' && L[i].grp.length;
+        const cont = stroke && i === stroke.layer && groupKind(stroke) && L[i].grp.length && L[i].kind === groupKind(stroke);
         vctx.drawImage(cont ? L[i].below : layers[i], 0, 0);
+        if (board.collab) board.collab.renderLayer(vctx, i); // 確定待ちの自分の線・相手の描きかけ
         if (stroke && i === stroke.layer && stroke.tool !== 'eraser') vctx.drawImage(temp, 0, 0);
       }
     });
@@ -295,9 +331,10 @@
 
   // 線 1 本を ctx に重ねる。縁取りは scratch で「フチ+線」を組み立ててから重ねる(描いている途中の表示と同じ)
   function applyOp(ctx, op) {
+    if (op.kind === 'break') return; // 縁取りのまとまりを区切るだけの印(一緒にデコるの「自分の線だけ消す」など)
     if (op.kind === 'clear') { ctx.clearRect(0, 0, W, H); return; }
     if (op.tool === 'eraser') { drawPath(ctx, op.pts, op.size, '#000', 1, 'destination-out'); return; }
-    const r = (op.tool === 'outline' ? op.size + op.osize * 2 : op.size) / 2 + 2;
+    const r = strokeRadius(op);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of op.pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     x0 = Math.max(0, Math.floor(x0 - r)); y0 = Math.max(0, Math.floor(y0 - r));
@@ -308,19 +345,91 @@
     paintStrokeTo(c, op);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
+  // 線の種類: brush / outline / eraser / neon(光る)/ marker(半透明、重ねても濃くならない)
+  const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
+  const neonBlur = op => op.size * 1.5 + 6;
+  // まとまりになる線の種類。縁取りはフチをまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る。
+  // マーカーは濃さが同じものだけをまとめる(濃さを変えたら別のまとまり)ので、種類に濃さを含める
+  const groupKind = op => {
+    if (!op || op.kind === 'clear' || op.kind === 'break') return null;
+    if (op.tool === 'outline') return 'outline';
+    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
+    return null;
+  };
+  const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
+  function strokeRadius(op) {
+    if (op.tool === 'outline') return (op.size + op.osize * 2) / 2 + 2;
+    if (op.tool === 'neon') return op.size / 2 + neonBlur(op) * 1.5 + 2;
+    return op.size / 2 + 2;
+  }
+  function mixWhite(hex, t) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex || '')) return '#ffffff';
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    const m = v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0');
+    return '#' + m(r) + m(g) + m(b);
+  }
+  // マーカーのペン先: 平たい(チゼル型)ペン先を斜め 75° に固定して、なぞった跡を塗る。
+  // 横に引くと太く、縦に引くと細く、線の端は斜めに切れる(2026-10-16 ぽこの見本)
+  const CHISEL_ANGLE = -Math.PI * 5 / 12;
+  function chiselPath(ctx, pts, size, color) {
+    const nx = Math.cos(CHISEL_ANGLE) * size / 2, ny = Math.sin(CHISEL_ANGLE) * size / 2;
+    ctx.save();
+    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+    if (pts.length === 1) {
+      const p = pts[0];
+      ctx.lineWidth = Math.max(2, size * 0.15); ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(p.x - nx, p.y - ny); ctx.stroke();
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], q = pts[i];
+      // 1 区間ずつ塗る(まとめて 1 つのパスにすると、向きの違う区間が打ち消し合って穴があく)。境目の隙間は 1px の線で埋める
+      ctx.beginPath();
+      ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(q.x + nx, q.y + ny);
+      ctx.lineTo(q.x - nx, q.y - ny); ctx.lineTo(p.x - nx, p.y - ny); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // ネオン: 線の色でぼかして光らせ、中心に白っぽい芯を描く
+  function paintNeon(c, op) {
+    c.save();
+    c.shadowColor = op.color; c.shadowBlur = neonBlur(op);
+    drawPath(c, op.pts, op.size, op.color, op.alpha);
+    drawPath(c, op.pts, op.size, op.color, op.alpha);
+    c.restore();
+    drawPath(c, op.pts, Math.max(1, op.size * 0.4), mixWhite(op.color, 0.7), op.alpha);
+  }
   function paintStrokeTo(c, op) {
+    if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
+    if (op.tool === 'neon') return paintNeon(c, op);
     if (op.tool === 'outline') drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
-  // 続いている縁取りをまとめて描く: フチを全部 → 線を全部(scratch で組み立ててから重ねる)
-  function paintGroupTo(c, grp) {
+  // まとまりを描く。縁取り: フチを全部 → 線を全部。マーカー: 不透明で全部描いてから 40% で 1 回だけ重ねる
+  function paintGroupTo(c, grp, kind) {
+    if (isMarkerKind(kind)) {
+      // 線の周りだけを作業用に使う(スマホで長いマーカーを描いても毎回全面を塗り直さない)
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const op of grp) {
+        const r = op.size / 2 + 2;
+        for (const p of op.pts) { x0 = Math.min(x0, p.x - r); y0 = Math.min(y0, p.y - r); x1 = Math.max(x1, p.x + r); y1 = Math.max(y1, p.y + r); }
+      }
+      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+      const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
+      if (w <= 0 || h <= 0) return;
+      const m = mk.getContext('2d');
+      m.clearRect(x0, y0, w, h);
+      for (const op of grp) chiselPath(m, op.pts, op.size, op.color);
+      c.save(); c.globalAlpha = grp[0].alpha ?? MARKER_ALPHA; c.drawImage(mk, x0, y0, w, h, x0, y0, w, h); c.restore();
+      return;
+    }
     for (const op of grp) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     for (const op of grp) drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
-  function drawGroup(ctx, grp) {
+  function drawGroup(ctx, grp, kind) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const op of grp) {
-      const r = (op.size + op.osize * 2) / 2 + 2;
+      const r = strokeRadius(op);
       for (const p of op.pts) { x0 = Math.min(x0, p.x - r); y0 = Math.min(y0, p.y - r); x1 = Math.max(x1, p.x + r); y1 = Math.max(y1, p.y + r); }
     }
     x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
@@ -328,24 +437,29 @@
     if (w <= 0 || h <= 0) return;
     const c = scratch.getContext('2d');
     c.clearRect(x0, y0, w, h);
-    paintGroupTo(c, grp);
+    paintGroupTo(c, grp, kind);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
   // canvas と状態 st({grp, below})に、そのレイヤーの op を順に足す。縁取りの続きはまとめて 1 回で描き直す
   function appendOps(canvas, st, list) {
     const ctx = canvas.getContext('2d');
-    let run = [];
+    let run = [], runKind = null;
     const flush = () => {
       if (!run.length) return;
+      if (st.grp.length && st.kind !== runKind) st.grp = []; // 種類が変わったら区切る
       const b = st.below.getContext('2d');
-      if (!st.grp.length) { b.clearRect(0, 0, W, H); b.drawImage(canvas, 0, 0); } // まとまりの始まり
+      if (!st.grp.length) { b.clearRect(0, 0, W, H); b.drawImage(canvas, 0, 0); st.kind = runKind; } // まとまりの始まり
       st.grp.push(...run); run = [];
       ctx.clearRect(0, 0, W, H); ctx.drawImage(st.below, 0, 0);
-      drawGroup(ctx, st.grp);
+      drawGroup(ctx, st.grp, st.kind);
     };
     for (const op of list) {
-      if (op.kind !== 'clear' && op.tool === 'outline') { run.push(op); continue; }
-      flush(); st.grp = []; // 普通のペン・消しゴム・消去で区切る
+      const k = groupKind(op);
+      if (k) {
+        if (run.length && runKind !== k) flush();
+        runKind = k; run.push(op); continue;
+      }
+      flush(); st.grp = []; // 普通のペン・ネオン・消しゴム・消去で区切る
       applyOp(ctx, op);
     }
     flush();
@@ -354,7 +468,7 @@
   function rebuild(i, list) {
     const c = layers[i].getContext('2d');
     c.clearRect(0, 0, W, H); c.drawImage(base[i], 0, 0);
-    L[i].grp = B[i].grp.slice();
+    L[i].grp = B[i].grp.slice(); L[i].kind = B[i].kind;
     if (L[i].grp.length) { const b = L[i].below.getContext('2d'); b.clearRect(0, 0, W, H); b.drawImage(B[i].below, 0, 0); }
     appendOps(layers[i], L[i], list || ops.filter(op => affects(op, i)));
   }
@@ -383,8 +497,9 @@
     updateButtons(); render(); save();
   }
   function updateButtons() {
-    document.getElementById('undo').disabled = ops.length === 0;
-    document.getElementById('redo').disabled = redoOps.length === 0;
+    // 一緒にデコる中は戻す対象をサーバーが選ぶので、押せるままにする
+    document.getElementById('undo').disabled = !board.collab && ops.length === 0;
+    document.getElementById('redo').disabled = !board.collab && redoOps.length === 0;
   }
   function loadInto(canvas, url, keep) {
     return new Promise(res => {
@@ -429,27 +544,73 @@
   function paintTemp() {
     const c = temp.getContext('2d');
     c.clearRect(0, 0, W, H);
-    // 縁取りが続くなら、まとまり全体(今の線を含む)を描き直す。表示は始まる前の画像 + temp(render)
-    const grp = stroke.tool === 'outline' ? L[stroke.layer].grp : [];
-    if (grp.length) paintGroupTo(c, [...grp, stroke]); else paintStrokeTo(c, stroke);
+    // 縁取り / マーカーが続くなら、まとまり全体(今の線を含む)を描き直す。表示は始まる前の画像 + temp(render)
+    const k = groupKind(stroke), st = L[stroke.layer];
+    if (k && st.grp.length && st.kind === k) paintGroupTo(c, [...st.grp, stroke], k); else paintStrokeTo(c, stroke);
   }
   function erase(pts) {
     drawPath(layers[stroke.layer].getContext('2d'), pts, stroke.size, '#000', 1, 'destination-out');
   }
 
+  // 一緒にデコる中はサーバーと同じく小数 1 桁に丸める(自分の表示と相手・描き直しの画素を揃える)
+  const q1 = v => board.collab ? Math.round(v * 10) / 10 : v;
+  const toBoard = ev => ({ x: q1((ev.clientX - vox) / vs), y: q1((ev.clientY - voy) / vs) });
   // 描くのは最初に触れた指(ポインター)だけ。描いている間の 2 本目以降の指は無視する
   // (スマホで 2 本指の拡大をしようとすると、指と指の間が線でつながっていた。2026-10-16 ぽこ報告)
+  // 指・ペンは動き始めてから線にする(長押しで小パレットを出すため、押しただけでは点を描かない)。マウスはすぐ描く
+  const LONG_PRESS_MS = 500, MOVE_SLOP = 8;
+  let pressTimer = 0;
+  function beginStroke(s) {
+    if (s.begun) return;
+    s.begun = true;
+    if (board.collab) {
+      board.collab.begin(s);
+      if (s.pts.length > 1) board.collab.points(s, s.pts.slice(1));
+    }
+    if (s.tool === 'eraser') drawPath(layers[s.layer].getContext('2d'), s.pts, s.size, '#000', 1, 'destination-out');
+  }
+  function abortStroke() {
+    clearTimeout(pressTimer);
+    stroke = null;
+    temp.getContext('2d').clearRect(0, 0, W, H);
+    render();
+  }
+  // 描けない状態(非表示のレイヤー・一緒にデコるのつなぎ直し中)でも、指の長押しで小パレットは出す
+  let pressOnly = null;
+  function armPaletteOnly(e) {
+    clearTimeout(pressTimer);
+    pressOnly = { pid: e.pointerId, sx: e.clientX, sy: e.clientY };
+    pressTimer = setTimeout(() => { const p = pressOnly; pressOnly = null; if (p) openQuickPalette(p.sx, p.sy); }, LONG_PRESS_MS);
+  }
+  function disarmPaletteOnly(e, moved) {
+    if (!pressOnly || e.pointerId !== pressOnly.pid) return;
+    if (moved && Math.hypot(e.clientX - pressOnly.sx, e.clientY - pressOnly.sy) <= MOVE_SLOP) return;
+    clearTimeout(pressTimer); pressOnly = null;
+  }
+  view.addEventListener('pointermove', e => disarmPaletteOnly(e, true));
+  view.addEventListener('pointerup', e => disarmPaletteOnly(e, false));
+  view.addEventListener('pointercancel', e => disarmPaletteOnly(e, false));
   view.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     if (stroke) return;
-    if (!state.visible[state.active]) return;
+    if (!state.visible[state.active] || (board.collab && !board.collab.canDraw())) {
+      if (e.pointerType !== 'mouse') armPaletteOnly(e);
+      return;
+    }
     view.setPointerCapture(e.pointerId);
     stroke = {
-      kind: 'stroke', layer: state.active, tool: state.tool, color: state.color, alpha: state.alpha,
+      kind: 'stroke', layer: state.active, tool: state.tool, color: state.color,
+      alpha: state.tool === 'marker' ? state.malpha : state.alpha,
       size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
-      pts: [{ x: e.clientX, y: e.clientY }], pid: e.pointerId,
+      pts: [toBoard(e)], pid: e.pointerId, begun: false, sx: e.clientX, sy: e.clientY,
     };
-    if (stroke.tool === 'eraser') erase(stroke.pts); else paintTemp();
+    if (stroke.tool !== 'eraser') paintTemp();
+    if (e.pointerType === 'mouse') beginStroke(stroke);
+    else {
+      const s = stroke;
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(() => { if (stroke === s && !s.begun) { abortStroke(); openQuickPalette(s.sx, s.sy); } }, LONG_PRESS_MS);
+    }
     render();
   });
   view.addEventListener('pointermove', e => {
@@ -458,7 +619,19 @@
     if (!stroke) return;
     let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     if (!evs.length) evs = [e];
-    for (const ev of evs) stroke.pts.push({ x: ev.clientX, y: ev.clientY });
+    const from = stroke.pts.length;
+    for (const ev of evs) stroke.pts.push(toBoard(ev));
+    if (!stroke.begun) {
+      if (Math.hypot(e.clientX - stroke.sx, e.clientY - stroke.sy) <= MOVE_SLOP) {
+        if (stroke.tool !== 'eraser') paintTemp();
+        render();
+        return;
+      }
+      clearTimeout(pressTimer);
+      beginStroke(stroke); // ここまでの点をまとめて送る
+    } else if (board.collab) {
+      board.collab.points(stroke, stroke.pts.slice(from));
+    }
     if (stroke.tool === 'eraser') {
       // eraser is incremental on the layer itself (destination-out does not stack visibly)
       erase(stroke.pts.slice(-Math.min(stroke.pts.length, evs.length + 2)));
@@ -466,12 +639,32 @@
       paintTemp();
     }
     render();
+    // 1 本の点数の上限(サーバーもそこで確定する)。超えたらそこで描き終わりにする
+    if (board.collab && stroke.pts.length >= board.collab.maxPoints()) endStroke();
   });
   const endStroke = e => {
     if (!stroke || (e && e.pointerId !== stroke.pid)) return;
+    clearTimeout(pressTimer);
+    if (e && e.type === 'pointercancel' && !stroke.begun) return abortStroke(); // 動かす前に取り消された(2 本指の操作など)
+    beginStroke(stroke); // 動かさずに離した(タップ)は点として描く
     const op = stroke;
     stroke = null;
-    delete op.pid;
+    delete op.pid; delete op.begun; delete op.sx; delete op.sy;
+    if (board.collab) {
+      // 確定はサーバーの返事で行う。それまでは途中の表示を「確定待ち」として出しておく
+      // 確定待ちの表示はその線 1 本だけ(マーカーのまとまり全体を渡すと、レイヤーの上に二重に重なって濃く見える)
+      let pend = temp;
+      if (isMarkerKind(groupKind(op))) {
+        const c = temp.getContext('2d');
+        c.clearRect(0, 0, W, H);
+        paintStrokeTo(c, op);
+      }
+      board.collab.end(op, pend);
+      temp.getContext('2d').clearRect(0, 0, W, H);
+      if (op.tool !== 'eraser') pushColorHistory(op.color);
+      render();
+      return;
+    }
     if (op.tool !== 'eraser') {
       temp.getContext('2d').clearRect(0, 0, W, H);
       pushColorHistory(op.color); // 実際に描いた色だけが履歴に入る
@@ -481,6 +674,12 @@
     commit(op);
     render();
   };
+  // 右クリックで小パレット(マウス)
+  view.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (stroke) return;
+    openQuickPalette(e.clientX, e.clientY);
+  });
   view.addEventListener('pointerup', endStroke);
   view.addEventListener('pointercancel', endStroke);
   view.addEventListener('pointerleave', () => { cursorEl.style.display = 'none'; });
@@ -492,7 +691,7 @@
     cursorEl.style.top = e.clientY + 'px';
   }
   function updateCursorSize() {
-    const d = state.tool === 'outline' ? state.size + state.osize * 2 : state.size;
+    const d = (state.tool === 'outline' ? state.size + state.osize * 2 : state.size) * vs;
     cursorEl.style.width = d + 'px'; cursorEl.style.height = d + 'px';
   }
 
@@ -505,6 +704,9 @@
   });
   function setTool(t) {
     state.tool = t;
+    // マーカーを選んでいる間は「不透明」スライダーがマーカーの濃さ(ペンの不透明度とは別に覚える)
+    const a = Math.round((t === 'marker' ? state.malpha : state.alpha) * 100);
+    $('alpha').value = a; $('alphaVal').textContent = a;
     for (const b of toolsEl.children) b.classList.toggle('on', b.dataset.tool === t);
     updateCursorSize(); save();
   }
@@ -517,7 +719,12 @@
     });
   };
   bindRange('size', 'sizeVal', 'size', 1);
-  bindRange('alpha', 'alphaVal', 'alpha', 0.01);
+  $('alpha').addEventListener('input', () => {
+    const v = +$('alpha').value;
+    if (state.tool === 'marker') state.malpha = v / 100; else state.alpha = v / 100;
+    $('alphaVal').textContent = v;
+    save();
+  });
   bindRange('osize', 'osizeVal', 'osize', 1);
   // ---------- colors ----------
   const isHex = c => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c);
@@ -546,6 +753,7 @@
   }
   // 自動: ペンが明るければ黒、暗ければ白(白ペン+白フチで太い白線になるのを防ぐ)
   function edgeColor() {
+    if (state.oedge === 'custom') return state.ocolor;
     if (state.oedge === 'white') return '#ffffff';
     if (state.oedge === 'black') return '#000000';
     // 相対輝度(sRGB を線形に戻して計算)。ピンク #ff7fb3 は白フチ、黄 #ffcc33 は黒フチ
@@ -556,10 +764,17 @@
   oedgeEl.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     setEdge(b.dataset.edge);
+    if (b.dataset.edge === 'custom') openPicker('ocolor'); else if (picker.target === 'ocolor') closePicker();
   });
   function setEdge(v) {
     state.oedge = v;
     for (const b of oedgeEl.children) b.classList.toggle('on', b.dataset.edge === v);
+    $('ocolorDot').style.background = state.ocolor;
+    save();
+  }
+  function setOcolor(c) {
+    state.ocolor = c;
+    $('ocolorDot').style.background = c;
     save();
   }
 
@@ -595,7 +810,8 @@
     if (picker.target === target) return closePicker();
     picker.target = target;
     pickerEl.classList.remove('closed');
-    $('colorWell').classList.add('on');
+    $('pickerTitle').textContent = target === 'ocolor' ? 'フチの色' : 'ペンの色';
+    $('colorWell').classList.toggle('on', target === 'color');
     syncPicker(); positionPanel();
   }
   function closePicker() {
@@ -635,9 +851,10 @@
   function applyPicker() {
     const c = hsvToHex(picker.h, picker.s, picker.v);
     hexEl.value = c; hexEl.classList.remove('bad');
-    setColor(c);
+    setPickerColor(c);
     drawPicker();
   }
+  const setPickerColor = c => picker.target === 'ocolor' ? setOcolor(c) : setColor(c);
   const clamp01 = v => Math.max(0, Math.min(1, v));
   function dragOn(el, fn) {
     el.addEventListener('pointerdown', e => {
@@ -665,10 +882,44 @@
     if (!isHex(v)) { hexEl.classList.add('bad'); return; }
     hexEl.classList.remove('bad');
     Object.assign(picker, hexToHsv(v));
-    setColor(v);
+    setPickerColor(v);
     drawPicker();
   });
   $('colorWell').addEventListener('click', () => openPicker('color'));
+
+  // ---------- 画面に出る小パレット(右クリック / 長押し)----------
+  const qp = $('qp');
+  const QTOOLS = [['brush', 'ペン'], ['outline', '縁取り'], ['eraser', '消しゴム'], ['neon', 'ネオン'], ['marker', 'マーカー']];
+  function openQuickPalette(x, y) {
+    qp.textContent = '';
+    const tools = document.createElement('div'); tools.className = 'qtools';
+    for (const [t, label] of QTOOLS) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      b.classList.toggle('on', state.tool === t);
+      b.addEventListener('click', () => { setTool(t); for (const x of tools.children) x.classList.toggle('on', x === b); });
+      tools.appendChild(b);
+    }
+    const sw = document.createElement('div'); sw.className = 'qsw';
+    for (const c of [...PRESETS, ...state.history.filter(h => !PRESETS.includes(h))].slice(0, 16)) {
+      const d = document.createElement('div'); d.style.background = c; d.title = c;
+      d.classList.toggle('on', c === state.color);
+      d.addEventListener('click', () => { setColor(c); syncPicker(); closeQuickPalette(); });
+      sw.appendChild(d);
+    }
+    qp.append(tools, sw);
+    qp.hidden = false;
+    const w = qp.offsetWidth, h = qp.offsetHeight;
+    const left = Math.max(4, Math.min(window.innerWidth - w - 4, x - w / 2));
+    const top = y + 14 + h <= window.innerHeight - 4 ? y + 14 : Math.max(4, y - h - 14);
+    qp.style.left = left + 'px'; qp.style.top = top + 'px';
+  }
+  function closeQuickPalette() { qp.hidden = true; }
+  // 小パレットの外を触ったら閉じる(その操作では描かない)
+  document.addEventListener('pointerdown', e => {
+    if (qp.hidden || qp.contains(e.target)) return;
+    closeQuickPalette();
+    if (e.target === view) e.stopPropagation();
+  }, true);
   $('pickerClose').addEventListener('click', closePicker);
 
   const layersEl = $('layers');
@@ -686,15 +937,15 @@
     }
   }
 
-  $('undo').addEventListener('click', undo);
-  $('redo').addEventListener('click', redo);
+  $('undo').addEventListener('click', () => board.collab ? board.collab.undo() : undo());
+  $('redo').addEventListener('click', () => board.collab ? board.collab.redo() : redo());
   function clearLayers(layer) {
     const op = { kind: 'clear', layer };
     for (const i of opLayers(op)) appendOps(layers[i], L[i], [op]);
     commit(op); render();
   }
-  $('clearLayer').addEventListener('click', () => clearLayers(state.active));
-  $('clearAll').addEventListener('click', () => clearLayers('all'));
+  $('clearLayer').addEventListener('click', () => board.collab ? board.collab.clear(state.active) : clearLayers(state.active));
+  $('clearAll').addEventListener('click', () => board.collab ? board.collab.clear('all') : clearLayers('all'));
   $('hideUi').addEventListener('click', () => setUiHidden(true));
 
   function setUiHidden(h) {
@@ -727,7 +978,7 @@
     drag = null;
   });
   function placeFab(x, y) {
-    x = Math.max(4, Math.min(W - 50, x)); y = Math.max(4, Math.min(H - 50, y));
+    x = Math.max(4, Math.min(VW - 50, x)); y = Math.max(4, Math.min(VH - 50, y));
     state.fab = { x, y };
     fab.style.left = x + 'px'; fab.style.top = y + 'px';
     positionPanel();
@@ -736,8 +987,8 @@
     if (!state.fab) return;
     const pw = 250, ph = panel.offsetHeight || 330;
     let x = state.fab.x + 54, y = state.fab.y;
-    if (x + pw > W - 4) x = state.fab.x - pw - 8;
-    if (y + ph > H - 4) y = Math.max(4, H - ph - 4);
+    if (x + pw > VW - 4) x = state.fab.x - pw - 8;
+    if (y + ph > VH - 4) y = Math.max(4, VH - ph - 4);
     panel.style.left = x + 'px'; panel.style.top = y + 'px';
   }
 
@@ -746,6 +997,7 @@
   // Ctrl+Z も付けない: OBS の対話では OBS 本体の「元に戻す」に吸われ、シーン編集まで戻ってしまう(2026-10-15 ぽこ確認)
   window.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); setUiHidden(!state.uiHidden); }
+    if (e.key === 'Escape') closeQuickPalette();
   });
 
   // ---------- persistence ----------
@@ -756,18 +1008,22 @@
       try {
         const data = {
           settings: {
-            tool: state.tool, size: state.size, alpha: state.alpha, color: state.color,
-            oedge: state.oedge, osize: state.osize, active: state.active,
+            tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
+            oedge: state.oedge, ocolor: state.ocolor, osize: state.osize, active: state.active,
             visible: state.visible, history: state.history, fab: state.fab,
             uiHidden: state.uiHidden, panelOpen: state.panelOpen,
           },
-          layers: layers.map(L => ({ img: L.toDataURL() })),
+          // 一緒にデコる中の絵は保存しない(1 人で描いていた絵をそのまま残す)
+          layers: board.collab ? soloLayers() : layers.map(L => ({ img: L.toDataURL() })),
         };
         localStorage.setItem(LS_KEY, JSON.stringify(data));
       } catch (err) {
         console.warn('save failed', err);
       }
     }, 300);
+  }
+  function soloLayers() {
+    try { return (JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}).layers || []; } catch (_) { return []; }
   }
   function load() {
     let data = null;
@@ -776,8 +1032,10 @@
       const s = data.settings;
       Object.assign(state, {
         tool: s.tool || 'brush', size: s.size || 8, alpha: s.alpha ?? 1,
+        malpha: typeof s.malpha === 'number' && s.malpha >= 0.05 && s.malpha <= 1 ? s.malpha : MARKER_ALPHA,
         color: isHex(s.color) ? s.color : state.color,
-        oedge: ['auto', 'white', 'black'].includes(s.oedge) ? s.oedge : 'auto',
+        oedge: ['auto', 'white', 'black', 'custom'].includes(s.oedge) ? s.oedge : 'auto',
+        ocolor: isHex(s.ocolor) ? s.ocolor : '#ffffff',
         osize: s.osize || 4,
         active: s.active || 0, visible: s.visible || [true, true, true],
         history: Array.isArray(s.history) ? s.history.filter(isHex).slice(0, 8) : [], fab: s.fab || null,
@@ -809,9 +1067,31 @@
     setTool(state.tool); setEdge(state.oedge);
     refreshSwatches(); refreshLayers(); updateButtons();
     ui.classList.toggle('hidden', state.uiHidden);
-    placeFab(state.fab ? state.fab.x : W - 70, state.fab ? state.fab.y : H - 70);
+    placeFab(state.fab ? state.fab.x : VW - 70, state.fab ? state.fab.y : VH - 70);
     setPanelOpen(state.panelOpen);
   }
+
+  // ---------- 一緒にデコる(collab.js。今はプラス版の Web 版だけ)から使う口。1 人で描くときは board.collab が null ----------
+  const board = {
+    collab: null, // 一緒にデコる中は collab.js のオブジェクト(begin / points / end / clear / undo / redo / renderLayer / canDraw / maxPoints)
+    LAYER_COUNT, state, layers, panel,
+    get W() { return W; }, get H() { return H; }, get stroke() { return stroke; },
+    applyOp, paintStrokeTo, drawPath, render, makeCanvas, updateButtons, save,
+    // 論理座標のステージに切り替える / 戻す。切り替えるとレイヤーは空になる
+    setStage(st) {
+      stage = st; resize(true);
+      for (let i = 0; i < LAYER_COUNT; i++) {
+        layers[i].getContext('2d').clearRect(0, 0, W, H);
+        base[i].getContext('2d').clearRect(0, 0, W, H);
+        L[i].grp = []; B[i].grp = [];
+      }
+      ops = []; redoOps = []; updateButtons(); render();
+    },
+    // レイヤー i を空から list(seq 順の op)で描き直す / 末尾に足す。縁取りのまとめ方は 1 人のときと同じ
+    relayer(i, list) { layers[i].getContext('2d').clearRect(0, 0, W, H); L[i].grp = []; appendOps(layers[i], L[i], list); },
+    appendLayer(i, list) { appendOps(layers[i], L[i], list); },
+  };
+  window.decoBoard = board;
 
   // ---------- init ----------
   if (typeof window.obsstudio === 'undefined' && new URLSearchParams(location.search).get('bg') !== 'transparent') document.body.classList.add('preview');
