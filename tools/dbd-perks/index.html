@@ -11,10 +11,10 @@
 
   <!-- ===== 配信に映す領域 ===== -->
   <section id="slots" class="slots layout-row" aria-label="パーク">
-    <button class="slot" type="button" data-i="0"><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
-    <button class="slot" type="button" data-i="1"><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
-    <button class="slot" type="button" data-i="2"><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
-    <button class="slot" type="button" data-i="3"><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="0"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="1"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="2"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="3"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
   </section>
   <p class="notice">非公式のファンツールです。Behaviour Interactive とは関係ありません。</p>
 
@@ -39,6 +39,7 @@
     <ol id="rows" class="rows"></ol>
 
     <div class="options">
+      <label id="optIconLabel"><input type="checkbox" id="optIcon"> パークの画像</label>
       <label><input type="checkbox" id="optChar"> キャラ名を表示</label>
       <label><input type="checkbox" id="optSound"> 効果音</label>
       <button id="poolBtn" class="btn-small" type="button">パークの設定</button>

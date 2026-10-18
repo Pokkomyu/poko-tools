@@ -121,6 +121,30 @@ body.preview { background: var(--poko-preview-bg); }
 .layout-diamond .slot[data-i="2"] { left: calc(650px + var(--slot) / 2 + var(--slot-gap) / 2); top: 540px; }
 .layout-diamond .slot[data-i="3"] { left: 650px; top: calc(540px + var(--slot) / 2 + var(--slot-gap) / 2); }
 
+/* パークの画像あり(GitHub Pages 版): 画像をひし形の中に、名前をひし形の外に出す */
+.slot-icon {
+  position: absolute;
+  left: 13%;
+  top: 13%;
+  width: 74%;
+  height: 74%;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 0 rgba(59, 43, 69, .35));
+}
+/* パークの画像は白い線画なので、ゲームと同じく濃い地に置く */
+.icons .slot::before { background: radial-gradient(circle, #5a4370 0%, #2c2138 75%); }
+.icons .slot.spinning::before { background: radial-gradient(circle, #5a4370 0%, #2c2138 75%); }
+.icons .slot-in { width: 300px; gap: 2px; }
+.icons .slot-name.empty { display: none; }
+/* 横並び: 名前はひし形の下 */
+.layout-row.icons .slot-in { top: calc(100% + 4px); transform: translate(-50%, 0); }
+/* ひし形: 上の枠は上、下の枠は下、左右の枠はそれぞれ外側 */
+.layout-diamond.icons .slot[data-i="0"] .slot-in { top: auto; bottom: calc(100% + 4px); transform: translate(-50%, 0); }
+.layout-diamond.icons .slot[data-i="3"] .slot-in { top: calc(100% + 4px); transform: translate(-50%, 0); }
+.layout-diamond.icons .slot[data-i="1"] .slot-in { left: auto; right: calc(100% - 6px); align-items: flex-end; text-align: right; transform: translate(0, -50%); }
+.layout-diamond.icons .slot[data-i="2"] .slot-in { left: calc(100% - 6px); align-items: flex-start; text-align: left; transform: translate(0, -50%); }
+
 .notice {
   position: absolute;
   left: 24px;
@@ -201,6 +225,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; font-size: 19px; }
 .options input { width: 20px; height: 20px; vertical-align: -3px; }
 .options .btn-small { margin-left: auto; }
+.options label.off { opacity: .4; }
 .pool-info { margin: -6px 0 0; font-size: 16px; font-weight: 700; opacity: .7; }
 .pool-info.warn { color: #d43a3a; opacity: 1; }
 

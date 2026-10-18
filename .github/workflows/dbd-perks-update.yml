@@ -1,0 +1,55 @@
+# パークスロット(tools/dbd-perks)のパーク情報を週 1 回取り直し、変わっていたら PR を作る。
+# マージ = GitHub Pages に公開(docs/release/github-pages.md)なので、マージは人が中身を見てから(2026-10-19 決定)。
+# 初回だけ repo の Settings → Actions → General →「Allow GitHub Actions to create and approve pull requests」をオンにする。
+name: dbd-perks update
+
+on:
+  schedule:
+    - cron: "0 3 * * 3"   # 毎週水曜 12:00 JST(DbD の更新は火曜〜水曜が多い)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dbd-perks-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: auto/dbd-perks-update
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: パーク情報を取り直す
+        run: |
+          python -m pip install --quiet pillow
+          python scripts/update-dbd-perks.py --bump --summary "$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 変わっていたら PR を作る(すでにあれば更新)
+        run: |
+          if [ -z "$(git status --porcelain -- tools/dbd-perks)" ]; then
+            echo "変更なし"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add tools/dbd-perks
+          version=$(python -c 'import json; print(json.load(open("tools/dbd-perks/tool.json"))["version"])')
+          git commit -q -m "chore(dbd-perks): パーク情報を更新する($version)"
+          git push -q -f origin "$BRANCH"
+          title="chore(dbd-perks): パーク情報を更新する($version)"
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')" ]; then
+            gh pr edit "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/summary.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/summary.md"
+          fi

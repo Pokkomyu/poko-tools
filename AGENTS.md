@@ -12,5 +12,6 @@
   - 保存は `localStorage` のみ
 - 1ツール = `tools/<tool>/` に閉じる。ツール間でファイルを参照しない(共通化は3ツール揃ってから)
 - 素材(画像・音声・フォント)を追加したら `tools/<tool>/CREDITS.md` に出典と再配布可否を書く。再配布不可の素材は同梱しない
+  - 例外: `dbd-perks` のパーク画像(`tools/dbd-perks/icons/`、Behaviour Interactive の素材)は GitHub Pages 版にだけ置き、zip には入れない(`docs/requirements/dbd-perks.md`)
 - 変更したら `tools/<tool>/tool.json` の version と `CHANGELOG.md` を更新する
 - 1 ticket = 1 branch = 1 commit

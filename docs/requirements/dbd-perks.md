@@ -12,7 +12,11 @@ Dead by Daylight(DbD)のパーク 4 つをスロットで抽選し、配信画�
 - **無料版のみ**。有償版(`edition/plus`)・BOOTH の有償出品・Web プラス特典には入れない
   - Behaviour Interactive のファンコンテンツ規約は非商用のみ(販売・寄付の募集は不可)。パーク名もゲームの内容なので、お金が絡む配り方をしない
   - 参考: https://support.deadbydaylight.com/hc/en-us/articles/4437901307668-General-guidelines-on-fan-created-content (2026-10-17 は 403 で本文を直接読めず、検索結果の要約で確認。公開前に本文を読み直す)
-- **公式のパークアイコン・画像は使わない**。スロットは文字(パーク名)と自作の枠だけ
+- **パークの画像は GitHub Pages 版(main)にだけ置く**(2026-10-19 ぶらんち決定。10-17 の「アイコンは使わない」を変更)
+  - 画像は公式 wiki(deadbydaylight.wiki.gg)のもの。BHVR の素材で、wiki のライセンス(CC BY-NC-SA)の対象外。BHVR の規約(非商用)の範囲で使う
+  - 無料 zip には入れない(`scripts/package-tool.sh` が `icons/` を入れない)。zip 版は画像なし・名前だけで動く
+  - AGENTS.md「再配布不可の素材は同梱しない」の例外として AGENTS.md に書いた
+- 枠は自作(公式の枠画像は使わない)
 - 画面・zip・案内ページに非公式である旨を書く(下の「表記」)
 
 ## 画面
@@ -26,6 +30,9 @@ Dead by Daylight(DbD)のパーク 4 つをスロットで抽選し、配信画�
 - 枠の形・色は自作(公式の枠画像を真似てトレースしない)
 
 ### 枠の中身
+- 画像あり(Pages 版で「パークの画像」オン。既定オン): ひし形の中に画像、名前はひし形の外(横並びは下、ひし形は上下左右の外側)。画像は白い線画なので、ひし形の地はゲームと同じく濃い色
+- 画像なし(zip 版、画像オフ、画像が見つからないパーク): ひし形の中に名前
+- 画像があるかは起動時に 1 枚読んで確かめる(zip 版ではチェックボックスを押せなくする)
 - パーク名(日本語)を大きく。長い名前は「：」で 2 行に分ける(最長は「悶絶のフック：苦痛という名の賜り物」18 文字、2026-10-17 時点)
 - 持ち主のキャラ名を小さく出す / 出さない(パネルで切替。既定は出さない。共通パークは「共通」)
 - ゲーム画面の上でも読めるよう、文字に縁取りを付ける
@@ -51,13 +58,22 @@ Dead by Daylight(DbD)のパーク 4 つをスロットで抽選し、配信画�
 - 保存するもの: 役割、並び、キャラ名表示、除外、固定、最後の結果、効果音
 
 ## パークのデータ
-- 実行時の取得はしない(file:// では `fetch` 不可)。データは `tools/dbd-perks/perks-data.js` に JS 定数で同梱する
-- 作り方: `scripts/update-dbd-perks.sh` で https://dbd.tricky.lol/api/perks?locale=ja と `?locale=en`(英語名、検索用)、`/api/characters?locale=ja`(キャラ名)を取得し、ID・役割・日本語名・英語名・キャラ名だけを書き出す。説明文は入れない
+- 実行時の取得はしない(file:// では `fetch` 不可。tricky.lol は CORS も許可していない)。データは `tools/dbd-perks/perks-data.js` に JS 定数で同梱する
+- 作り方: `scripts/update-dbd-perks.py` で https://dbd.tricky.lol/api/perks?locale=ja と `?locale=en`(英語名、検索用)、`/api/characters?locale=ja`(キャラ名)を取得し、ID・役割・日本語名・英語名・キャラ名・画像のファイル名だけを書き出す。説明文は入れない
+- 画像: wiki.gg の API で探し、256px の透過 PNG を 128px・256 色に縮めて `tools/dbd-perks/icons/<id>.png` に置く(全部で約 1.5MB)
+  - 探す順: 英語名の記事に載っている画像のうち名前が一番近いもの → ゲーム内の画像パスから作った名前(`IconPerks_` / `IconsPerks_` / `T_UI_iconsPerks_`)
+  - 記事を優先するのは、ゲームのデータで画像が入れ替わっているパークがあるため(Teamwork: Toughen Up / Throw Down)
+  - 2026-10-19 時点で 319 / 321 個。見つからない「死ぬまで親友」「忍び足」は名前だけで出る
+- 変わっていなければファイルを書き換えない(取得日だけの差分を出さない)
   - 名前の余分な空白は詰める(例: 「ウィンドウズ・オブ・ オポチュニティ」)
   - データの取得日を `perks-data.js` に入れ、パネルに「パーク情報: YYYY-MM-DD 時点」と出す
 - 2026-10-17 時点で 321 個(サバイバー 176 / キラー 145)
-- 新チャプターで増えたら、スクリプトを流して version を上げる(ぶらんち)
+- **自動更新**(2026-10-19 ぶらんち決定): GitHub Actions(`.github/workflows/dbd-perks-update.yml`)が毎週水曜 12:00 JST(と手動実行)にスクリプトを `--bump` で流し、変わっていたら PR `auto/dbd-perks-update` を作る(開いたままなら更新)
+  - version は patch を 1 つ上げ、CHANGELOG に追加・削除・更新したパークを書く。PR 本文に画像が見つからないパークを出す
+  - マージ = Pages 公開なので、マージは人が見てから。zip 版は Release を作り直すまで古いまま
+  - 初回だけ Settings → Actions → General の「Allow GitHub Actions to create and approve pull requests」をオンにする(devuser)
 - dbd.tricky.lol の利用条件は未確認。公開前に確認し、CREDITS.md に出典を書く
+- wiki.gg の API は User-Agent に repo の URL を入れ、画像は変わった分だけ取る(週 1 回)
 
 ## 表記
 - 画面の隅(小さく)・パネル・zip の利用規約・案内ページに:
@@ -65,7 +81,7 @@ Dead by Daylight(DbD)のパーク 4 つをスロットで抽選し、配信画�
 - `tools/dbd-perks/CREDITS.md` にパーク名データの出典
 
 ## 作らないもの(今回)
-- パークのアイコン・説明文の表示
+- パークの説明文の表示
 - アドオン・オファリング・キラーの抽選
 - 配信画面とは別ページの操作画面(conventions.md の file:// 制約)
 

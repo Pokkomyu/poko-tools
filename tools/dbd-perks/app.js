@@ -15,7 +15,8 @@
   var NAME_MAX_PX = 40;
   var NAME_MIN_PX = 16;
   var NAME_SPLIT_LEN = 9;
-  var NAME_BOX_W = 186; // .slot-in の幅(ひし形 300px の 66% = 198px)から縁取りの分を引く
+  var NAME_BOX_W = 186;       // .slot-in の幅(ひし形 300px の 66% = 198px)から縁取りの分を引く
+  var NAME_BOX_W_ICON = 290;  // 画像を出すときは名前をひし形の外に出す(.icons .slot-in の幅 300px)
   // 回転: 名前が切り替わる間隔を SPIN_TICK_MIN → SPIN_TICK_MAX に伸ばしながら、SPIN_MS + 枠ごとの遅れで止める
   var SPIN_MS = 1400;
   var SPIN_STAGGER_MS = 380;
@@ -35,7 +36,7 @@
   function roleState() {
     return { slots: [null, null, null, null], locked: [false, false, false, false], excluded: [] };
   }
-  var state = { role: "k", layout: "row", showChar: false, sound: true, k: roleState(), s: roleState() };
+  var state = { role: "k", layout: "row", showIcon: true, showChar: false, sound: true, k: roleState(), s: roleState() };
 
   function load() {
     try {
@@ -43,6 +44,7 @@
       if (!saved) return;
       if (saved.role === "k" || saved.role === "s") state.role = saved.role;
       if (saved.layout === "row" || saved.layout === "diamond") state.layout = saved.layout;
+      state.showIcon = saved.showIcon !== false;
       state.showChar = !!saved.showChar;
       state.sound = saved.sound !== false;
       ["k", "s"].forEach(function (r) {
@@ -77,6 +79,8 @@
     slots: $("slots"),
     slotBtns: Array.prototype.slice.call(document.querySelectorAll(".slot")),
     rows: $("rows"),
+    optIcon: $("optIcon"),
+    optIconLabel: $("optIconLabel"),
     optChar: $("optChar"),
     optSound: $("optSound"),
     poolBtn: $("poolBtn"),
@@ -134,7 +138,7 @@
   // 枠に収まる大きさ(上限・下限をかける前)
   function rawPx(lines) {
     var widest = Math.max.apply(null, lines.map(function (l) { return textWidth(l, 100); }));
-    return NAME_BOX_W / widest * 100;
+    return (iconMode() ? NAME_BOX_W_ICON : NAME_BOX_W) / widest * 100;
   }
   function renderName(node, name) {
     node.classList.toggle("empty", !name);
@@ -155,8 +159,36 @@
   }
   function charLabel(p) { return p.ch || "共通"; }
 
+  // ---------- パークの画像 ----------
+  // 画像(icons/<id>.png)は GitHub Pages 版にだけ置く。zip 版にはないので、1 枚読めるか試してから使う
+  var iconsAvailable = false;
+  function iconMode() { return iconsAvailable && state.showIcon; }
+  function iconUrl(p) { return "icons/" + encodeURIComponent(p.id) + ".png"; }
+  function probeIcons(done) {
+    var first = DBD_PERKS.filter(function (p) { return p.icon; })[0];
+    if (!first) { done(); return; }
+    var img = new Image();
+    img.onload = function () { iconsAvailable = true; done(); };
+    img.onerror = function () { done(); };
+    img.src = iconUrl(first);
+  }
+  // 回転中に画像の読み込みが追いつかないので、その役割の画像を先に読んでおく
+  var preloaded = {};
+  function preloadIcons() {
+    if (!iconMode() || preloaded[state.role]) return;
+    preloaded[state.role] = DBD_PERKS.filter(function (p) { return p.r === state.role && p.icon; }).map(function (p) {
+      var img = new Image();
+      img.src = iconUrl(p);
+      return img;
+    });
+  }
+
   function renderSlot(i, perk) {
     var btn = el.slotBtns[i];
+    var img = btn.querySelector(".slot-icon");
+    var showImg = iconMode() && perk && perk.icon;
+    img.hidden = !showImg;
+    if (showImg && img.getAttribute("src") !== iconUrl(perk)) img.src = iconUrl(perk);
     renderName(btn.querySelector(".slot-name"), perk ? perk.ja : "");
     btn.querySelector(".slot-char").textContent = perk && state.showChar ? charLabel(perk) : "";
   }
@@ -199,7 +231,11 @@
     var c = cur();
     document.querySelectorAll("[data-role]").forEach(function (b) { b.classList.toggle("on", b.dataset.role === state.role); });
     document.querySelectorAll("[data-layout]").forEach(function (b) { b.classList.toggle("on", b.dataset.layout === state.layout); });
-    el.slots.className = "slots layout-" + state.layout;
+    el.slots.className = "slots layout-" + state.layout + (iconMode() ? " icons" : "");
+    el.optIcon.checked = iconMode();
+    el.optIcon.disabled = !iconsAvailable;
+    el.optIconLabel.title = iconsAvailable ? "" : "画像は Web 版(GitHub Pages)だけ。zip 版は文字だけです";
+    el.optIconLabel.classList.toggle("off", !iconsAvailable);
     el.optChar.checked = state.showChar;
     el.optSound.checked = state.sound;
 
@@ -422,6 +458,7 @@
       if (spinning) return;
       state.role = b.dataset.role;
       save();
+      preloadIcons();
       render();
       if (!el.pool.hidden) renderPool();
     });
@@ -431,6 +468,7 @@
   });
   el.slotBtns.forEach(function (b, i) { b.addEventListener("click", function () { spin([i]); }); });
   el.spinBtn.addEventListener("click", function () { spin([0, 1, 2, 3]); });
+  el.optIcon.addEventListener("change", function () { state.showIcon = el.optIcon.checked; save(); preloadIcons(); render(); });
   el.optChar.addEventListener("change", function () { state.showChar = el.optChar.checked; save(); render(); });
   el.optSound.addEventListener("change", function () { state.sound = el.optSound.checked; save(); });
   el.poolBtn.addEventListener("click", openPool);
@@ -448,6 +486,7 @@
   el.dataDate.textContent = "パーク情報: " + DBD_PERKS_DATE + " 時点";
   fitStage();
   render();
+  probeIcons(function () { preloadIcons(); render(); });
   // 丸ゴシックの読み込みが遅れると幅の測り直しが要る
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
 })();
