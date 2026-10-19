@@ -147,6 +147,9 @@ body.preview { background: var(--poko-preview-bg); }
 .layout-diamond.icons .slot[data-i="1"] .slot-in { left: auto; right: calc(100% + 14px); align-items: flex-end; text-align: right; transform: translate(0, -50%); }
 .layout-diamond.icons .slot[data-i="2"] .slot-in { left: calc(100% + 14px); align-items: flex-start; text-align: left; transform: translate(0, -50%); }
 
+/* パーク名(とキャラ名)を出さない。画像を出しているときだけ */
+.no-name .slot-in { display: none; }
+
 /* ひし形の枠を出さない(画像だけ / 名前だけ) */
 .no-frame .slot::before { display: none; }
 /* 枠がないと白い線画が明るい画面に溶けるので、影を濃くする */
