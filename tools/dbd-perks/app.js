@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.2.0"; // tool.json と揃える
+  var VERSION = "0.2.1"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
@@ -38,7 +38,7 @@
   }
   var PRESET_MAX = 10;   // 役割ごと
   var PRESET_NAME_MAX = 20;
-  var state = { role: "k", layout: "row", showIcon: true, showFrame: true, showChar: false, sound: true, k: roleState(), s: roleState(),
+  var state = { role: "k", layout: "row", showIcon: true, showFrame: true, showName: true, showChar: false, sound: true, k: roleState(), s: roleState(),
                 presets: { k: [], s: [] } }; // presets: 有効 / 無効のセット { name, excluded: [外した ID] }
 
   function load() {
@@ -49,6 +49,7 @@
       if (saved.layout === "row" || saved.layout === "diamond") state.layout = saved.layout;
       state.showIcon = saved.showIcon !== false;
       state.showFrame = saved.showFrame !== false;
+      state.showName = saved.showName !== false;
       state.showChar = !!saved.showChar;
       state.sound = saved.sound !== false;
       ["k", "s"].forEach(function (r) {
@@ -91,6 +92,8 @@
     optIcon: $("optIcon"),
     optIconLabel: $("optIconLabel"),
     optFrame: $("optFrame"),
+    optName: $("optName"),
+    optNameLabel: $("optNameLabel"),
     optChar: $("optChar"),
     optSound: $("optSound"),
     poolBtn: $("poolBtn"),
@@ -251,6 +254,12 @@
     document.querySelectorAll("[data-layout]").forEach(function (b) { b.classList.toggle("on", b.dataset.layout === state.layout); });
     el.slots.className = "slots layout-" + state.layout + (iconMode() ? " icons" : "") + (state.showFrame ? "" : " no-frame");
     el.optFrame.checked = state.showFrame;
+    // 名前を消せるのは画像を出しているときだけ(画像なしで消すと何も映らない)
+    el.slots.classList.toggle("no-name", iconMode() && !state.showName);
+    el.optName.checked = !iconMode() || state.showName;
+    el.optName.disabled = !iconMode();
+    el.optNameLabel.classList.toggle("off", !iconMode());
+    el.optNameLabel.title = iconMode() ? "" : "名前を消せるのは「パークの画像」がオンのときだけです";
     el.optIcon.checked = iconMode();
     el.optIcon.disabled = !iconsAvailable;
     el.optIconLabel.title = iconsAvailable ? "" : "画像は Web 版(GitHub Pages)だけ。zip 版は文字だけです";
@@ -643,6 +652,7 @@
   el.spinBtn.addEventListener("click", function () { spin([0, 1, 2, 3]); });
   el.optIcon.addEventListener("change", function () { state.showIcon = el.optIcon.checked; save(); preloadIcons(); render(); });
   el.optFrame.addEventListener("change", function () { state.showFrame = el.optFrame.checked; save(); render(); });
+  el.optName.addEventListener("change", function () { state.showName = el.optName.checked; save(); render(); });
   el.optChar.addEventListener("change", function () { state.showChar = el.optChar.checked; save(); render(); });
   el.optSound.addEventListener("change", function () { state.sound = el.optSound.checked; save(); });
   el.poolBtn.addEventListener("click", openPool);
