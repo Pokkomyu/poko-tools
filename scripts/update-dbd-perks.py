@@ -132,7 +132,34 @@ def find_icons(perks_en):
         hit = next((t for t in titles if "imageinfo" in pages.get(t, {})), None)
         if hit:
             found[pid] = hit
+    # 3. それでもないものは、wiki のパーク画像の一覧から名前が十分近いものを選ぶ
+    #    (例: 記事名が「Light-Footed」・画像が IconPerks_light-Footed、ゲームのデータは friendsTillTheEnd・wiki は friendsTilTheEnd)
+    rest = [pid for pid in perks_en if pid not in found]
+    if rest:
+        used = set(found.values())
+        catalog = [t for t in list_perk_icons() if t not in used]
+        for pid in rest:
+            key = name_key(names[pid])
+            scored = [(difflib.SequenceMatcher(None, key, name_key(ICON_FILE.sub("", t)[:-4])).ratio(), t) for t in catalog]
+            if scored:
+                score, best = max(scored)
+                if score >= 0.85:
+                    found[pid] = best
     return {pid: t.replace(" ", "_") for pid, t in found.items()}
+
+
+def list_perk_icons():
+    """wiki にあるパーク画像のファイル名(File:…)を全部返す。前方一致は大文字小文字を区別するので 3 種類とも引く"""
+    out = []
+    for prefix in ("IconPerks_", "IconsPerks_", "T_UI_iconsPerks_"):
+        cont = {}
+        while True:
+            r = wiki_api(action="query", list="allimages", aiprefix=prefix, ailimit="500", **cont)
+            out += ["File:" + x["name"] for x in r.get("query", {}).get("allimages", [])]
+            if "continue" not in r:
+                break
+            cont = r["continue"]
+    return [t for t in out if t.lower().endswith(".png") and not re.search(r"\d+\.\d+\.\d+", t)]  # 「… 10.0.0PTB.png」などの試験版は除く
 
 
 def download_icons(icon_titles, old_icons):

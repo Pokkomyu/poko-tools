@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.2.4"; // tool.json と揃える
+  var VERSION = "0.2.5"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
