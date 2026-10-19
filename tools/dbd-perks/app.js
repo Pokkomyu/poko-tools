@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.2.1"; // tool.json と揃える
+  var VERSION = "0.2.2"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
@@ -36,9 +36,10 @@
   function roleState() {
     return { slots: [null, null, null, null], locked: [false, false, false, false], excluded: [] };
   }
+  var BG_MODES = ["auto", "transparent", "pink", "green"];
   var PRESET_MAX = 10;   // 役割ごと
   var PRESET_NAME_MAX = 20;
-  var state = { role: "k", layout: "row", showIcon: true, showFrame: true, showName: true, showChar: false, sound: true, k: roleState(), s: roleState(),
+  var state = { role: "k", layout: "row", bg: "auto", showIcon: true, showFrame: true, showName: true, showChar: false, sound: true, k: roleState(), s: roleState(),
                 presets: { k: [], s: [] } }; // presets: 有効 / 無効のセット { name, excluded: [外した ID] }
 
   function load() {
@@ -49,6 +50,7 @@
       if (saved.layout === "row" || saved.layout === "diamond") state.layout = saved.layout;
       state.showIcon = saved.showIcon !== false;
       state.showFrame = saved.showFrame !== false;
+      if (BG_MODES.indexOf(saved.bg) >= 0) state.bg = saved.bg;
       state.showName = saved.showName !== false;
       state.showChar = !!saved.showChar;
       state.sound = saved.sound !== false;
@@ -123,7 +125,14 @@
   // ---------- layout ----------
 
   var isObs = typeof window.obsstudio !== "undefined";
-  if (!isObs && params.get("bg") !== "transparent") document.body.classList.add("preview");
+  // 背景: 自動(OBS の中では透過、ブラウザではプレビュー用のピンク)/ 透過 / ピンク / グリーン(クロマキー用)。
+  // URL の ?bg=transparent は前からの指定なので、パネルの設定より優先する
+  function applyBg() {
+    var mode = params.get("bg") === "transparent" ? "transparent" : state.bg;
+    if (mode === "auto") mode = isObs ? "transparent" : "pink";
+    document.body.classList.toggle("preview", mode === "pink");
+    document.body.classList.toggle("green", mode === "green");
+  }
 
   function fitStage() {
     var w = window.innerWidth;
@@ -251,7 +260,16 @@
   function render() {
     var c = cur();
     document.querySelectorAll("[data-role]").forEach(function (b) { b.classList.toggle("on", b.dataset.role === state.role); });
-    document.querySelectorAll("[data-layout]").forEach(function (b) { b.classList.toggle("on", b.dataset.layout === state.layout); });
+    document.querySelectorAll("[data-bg]").forEach(function (b) {
+    b.addEventListener("click", function () { state.bg = b.dataset.bg; save(); render(); });
+  });
+  document.querySelectorAll("[data-layout]").forEach(function (b) { b.classList.toggle("on", b.dataset.layout === state.layout); });
+    document.querySelectorAll("[data-bg]").forEach(function (b) {
+      b.classList.toggle("on", b.dataset.bg === state.bg);
+      b.setAttribute("aria-checked", b.dataset.bg === state.bg ? "true" : "false");
+      b.setAttribute("role", "radio");
+    });
+    applyBg();
     el.slots.className = "slots layout-" + state.layout + (iconMode() ? " icons" : "") + (state.showFrame ? "" : " no-frame");
     el.optFrame.checked = state.showFrame;
     // 名前を消せるのは画像を出しているときだけ(画像なしで消すと何も映らない)

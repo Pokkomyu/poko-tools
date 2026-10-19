@@ -27,6 +27,7 @@ html, body {
 }
 
 body.preview { background: var(--poko-preview-bg); }
+body.green { background: #00ff00; }  /* クロマキー用 */
 
 /* 1920x1080 固定ステージ。app.js がウィンドウに合わせて拡大縮小する */
 .stage {
@@ -191,6 +192,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .seg button { flex: 1; padding: 8px 0; border: 0; background: var(--poko-white); font-size: 20px; }
 .seg button + button { border-left: 3px solid var(--poko-ink); }
 .seg button.on { background: var(--poko-yellow); }
+.bg-row { display: flex; align-items: center; gap: 10px; }
+.bg-label { flex: none; font-size: 19px; }
+.bg-row .seg button { padding: 6px 0; font-size: 17px; }
 
 .rows { flex: 1; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .row {
