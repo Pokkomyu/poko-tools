@@ -76,9 +76,9 @@ Dead by Daylight(DbD)のパーク 4 つをスロットで抽選し、配信画�
 - 実行時の取得はしない(file:// では `fetch` 不可。tricky.lol は CORS も許可していない)。データは `tools/dbd-perks/perks-data.js` に JS 定数で同梱する
 - 作り方: `scripts/update-dbd-perks.py` で https://dbd.tricky.lol/api/perks?locale=ja と `?locale=en`(英語名、検索用)、`/api/characters?locale=ja`(キャラ名)を取得し、ID・役割・日本語名・英語名・キャラ名・画像のファイル名だけを書き出す。説明文は入れない
 - 画像: wiki.gg の API で探し、256px の透過 PNG を 128px・256 色に縮めて `tools/dbd-perks/icons/<id>.png` に置く(全部で約 1.5MB)
-  - 探す順: 英語名の記事に載っている画像のうち名前が一番近いもの → ゲーム内の画像パスから作った名前(`IconPerks_` / `IconsPerks_` / `T_UI_iconsPerks_`)
+  - 探す順: 英語名の記事に載っている画像のうち名前が一番近いもの → ゲーム内の画像パスから作った名前(`IconPerks_` / `IconsPerks_` / `T_UI_iconsPerks_`)→ wiki のパーク画像の一覧(上の 3 種類の前方一致)から名前が 0.85 以上近いもの(0.2.5。記事名の大文字小文字・ハイフン違いや、ゲームのデータの綴り違いを拾う)
   - 記事を優先するのは、ゲームのデータで画像が入れ替わっているパークがあるため(Teamwork: Toughen Up / Throw Down)
-  - 2026-10-19 時点で 319 / 321 個。見つからない「死ぬまで親友」「忍び足」は名前だけで出る
+  - 2026-10-19 時点で 321 / 321 個(0.2.4 までは「死ぬまで親友」= wiki は friendsTilTheEnd・ゲームは friendsTillTheEnd、「忍び足」= 記事名 Light-Footed・画像 light-Footed が取れていなかった)
 - 変わっていなければファイルを書き換えない(取得日だけの差分を出さない)
   - 名前の余分な空白は詰める(例: 「ウィンドウズ・オブ・ オポチュニティ」)
   - データの取得日を `perks-data.js` に入れ、パネルに「パーク情報: YYYY-MM-DD 時点」と出す
