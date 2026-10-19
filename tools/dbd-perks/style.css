@@ -11,6 +11,7 @@
   --poko-preview-bg: #ffd0f5;
   --poko-font: "M PLUS Rounded 1c", "Kosugi Maru", "Hiragino Maru Gothic ProN",
     "BIZ UDPGothic", "Meiryo", system-ui, sans-serif;
+  --killer-red: #ff3b47;  /* キラーの枠。--poko-red(#ff6b6b)はくすんで見えた(2026-10-19 ぶらんち) */
   --slot: 300px;      /* ひし形の対角線 */
   --slot-gap: 14px;
 }
@@ -78,7 +79,7 @@ body.preview { background: var(--poko-preview-bg); }
   box-shadow: inset 0 0 0 6px var(--poko-pink);
   transform: rotate(45deg);
 }
-.slot.k::before { box-shadow: inset 0 0 0 6px var(--poko-red); }
+.slot.k::before { box-shadow: inset 0 0 0 6px var(--killer-red); }
 .slot.s::before { box-shadow: inset 0 0 0 6px var(--poko-blue); }
 .slot.spinning::before { background: #fff3fa; }
 .slot.stopped::before { animation: slot-pop .45s cubic-bezier(.2, 1.6, .4, 1); }
@@ -142,8 +143,14 @@ body.preview { background: var(--poko-preview-bg); }
 /* ひし形: 上の枠は上、下の枠は下、左右の枠はそれぞれ外側 */
 .layout-diamond.icons .slot[data-i="0"] .slot-in { top: auto; bottom: calc(100% + 4px); transform: translate(-50%, 0); }
 .layout-diamond.icons .slot[data-i="3"] .slot-in { top: calc(100% + 4px); transform: translate(-50%, 0); }
-.layout-diamond.icons .slot[data-i="1"] .slot-in { left: auto; right: calc(100% - 6px); align-items: flex-end; text-align: right; transform: translate(0, -50%); }
-.layout-diamond.icons .slot[data-i="2"] .slot-in { left: calc(100% - 6px); align-items: flex-start; text-align: left; transform: translate(0, -50%); }
+/* 左右は名前の高さの分だけひし形の斜辺が広がるので、先端から離す(先端に寄せると文字が枠に重なった) */
+.layout-diamond.icons .slot[data-i="1"] .slot-in { left: auto; right: calc(100% + 14px); align-items: flex-end; text-align: right; transform: translate(0, -50%); }
+.layout-diamond.icons .slot[data-i="2"] .slot-in { left: calc(100% + 14px); align-items: flex-start; text-align: left; transform: translate(0, -50%); }
+
+/* ひし形の枠を出さない(画像だけ / 名前だけ) */
+.no-frame .slot::before { display: none; }
+/* 枠がないと白い線画が明るい画面に溶けるので、影を濃くする */
+.no-frame .slot-icon { filter: drop-shadow(0 0 2px rgba(20, 12, 28, .9)) drop-shadow(0 0 6px rgba(20, 12, 28, .6)); }
 
 .notice {
   position: absolute;
@@ -269,6 +276,23 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: #fff7fc;
 }
 .pool-head { display: flex; justify-content: space-between; align-items: center; font-size: 24px; }
+.preset { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 3px solid var(--poko-ink); border-radius: 12px; background: var(--poko-white); }
+.preset-row { display: flex; align-items: center; gap: 6px; }
+.preset-label { flex: none; font-size: 17px; }
+.preset-sel, .preset-name, .pool-filter select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 3px solid var(--poko-ink);
+  border-radius: 10px;
+  background: var(--poko-white);
+  font: inherit;
+  font-size: 16px;
+}
+.preset-now { margin: 0; font-size: 14px; font-weight: 700; opacity: .65; }
+.preset-now:empty { display: none; }
+.pool-filter { display: flex; align-items: center; gap: 6px; font-size: 17px; }
+.pool-filter span { flex: none; }
 .pool-search {
   padding: 8px 12px;
   border: 3px solid var(--poko-ink);
@@ -296,4 +320,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pool-list .name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-list .en { min-width: 0; font-size: 13px; font-weight: 700; opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-list .off { opacity: .45; }
+.pool-list .grp { position: sticky; top: -4px; z-index: 1; margin-top: 4px; border-radius: 8px; background: #ffe3f1; }
+.pool-list .grp label { font-size: 17px; }
+.pool-list .grp .name { max-width: 75%; }
+.pool-list .grp .en { margin-left: auto; opacity: .7; }
+.pool-list .empty { padding: 12px; font-size: 17px; opacity: .6; }
 .pool-hint { margin: 0; font-size: 14px; font-weight: 700; opacity: .6; }

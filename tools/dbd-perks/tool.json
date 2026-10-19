@@ -1,7 +1,7 @@
 {
   "name": "dbd-perks",
   "displayName": "パークスロット",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "obs": {
     "width": 1920,
     "height": 1080,
