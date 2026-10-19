@@ -302,6 +302,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .preset-now:empty { display: none; }
 .pool-filter { display: flex; align-items: center; gap: 6px; font-size: 17px; }
 .pool-filter span { flex: none; }
+.pool-filter .seg { flex: 1; }
+.pool-filter .seg button { padding: 5px 0; font-size: 16px; }
+.pool-tree { display: flex; align-items: center; gap: 8px; margin: -4px 0; }
+.range-info { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; opacity: .65; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-search {
   padding: 8px 12px;
   border: 3px solid var(--poko-ink);
@@ -329,9 +333,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pool-list .name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-list .en { min-width: 0; font-size: 13px; font-weight: 700; opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pool-list .off { opacity: .45; }
-.pool-list .grp { position: sticky; top: -4px; z-index: 1; margin-top: 4px; border-radius: 8px; background: #ffe3f1; }
-.pool-list .grp label { font-size: 17px; }
-.pool-list .grp .name { max-width: 75%; }
-.pool-list .grp .en { margin-left: auto; opacity: .7; }
+/* DLC の見出し(ツリーの枝)。開いている間は上に貼り付く */
+.pool-list .grp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 8px 4px 2px;
+  border-radius: 8px;
+  background: #ffe3f1;
+  font-size: 17px;
+}
+.pool-list .grp.open { position: sticky; top: -4px; z-index: 1; }
+.pool-list .grp.off { opacity: .55; }
+.pool-list .grp .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.pool-list .grp .en { flex: none; opacity: .7; }
+.pool-list .grp input { width: 18px; height: 18px; flex: none; }
+.twisty { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; font-size: 14px; }
+.twisty:hover { background: #ffc9e4; }
+/* パークの行は見出しの下に字下げ */
+.pool-list .child label { padding-left: 42px; }
 .pool-list .empty { padding: 12px; font-size: 17px; opacity: .6; }
 .pool-hint { margin: 0; font-size: 14px; font-weight: 700; opacity: .6; }

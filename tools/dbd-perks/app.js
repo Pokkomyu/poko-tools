@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.2.3"; // tool.json と揃える
+  var VERSION = "0.2.4"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
@@ -119,7 +119,10 @@
     presetSave: $("presetSave"),
     presetNow: $("presetNow"),
     dlcFrom: $("dlcFrom"),
-    dlcTo: $("dlcTo")
+    dlcTo: $("dlcTo"),
+    rangeRow: $("rangeRow"),
+    rangeInfo: $("rangeInfo"),
+    treeToggle: $("treeToggle")
   };
 
   // ---------- layout ----------
@@ -454,14 +457,17 @@
     var name = d.ja.replace(/^「(.*)」チャプター$/, "$1");
     return d.id === "" ? name : (d.d ? d.d.slice(0, 7) : "最近") + " " + name;
   }
-  // 時期の絞り込み(開いている間だけ。役割を変えたら全期間に戻す)
-  var range = { role: "", from: 0, to: DBD_DLCS.length - 1 };
+  // 時期の絞り込み(開いている間だけ。役割を変えたら全期間に戻す)。all = 全期間(from / to は「期間を指定」用に覚えておく)
+  var range = { role: "", all: true, from: 0, to: DBD_DLCS.length - 1 };
+  // 開いている DLC(ツリー)。設定を開くたびに全部閉じた状態から。検索中はヒットした DLC を開いて見せる
+  var openDlc = {};
 
   function openPool() {
     el.pool.hidden = false;
     el.poolSearch.value = "";
     el.presetName.value = "";
     range.role = "";
+    openDlc = {};
     picked = -1;
     renderPool();
   }
@@ -472,7 +478,18 @@
   }
   function fillRange() {
     var list = roleDlcs();
-    if (range.role !== state.role) range = { role: state.role, from: list[0], to: list[list.length - 1] };
+    if (range.role !== state.role) { range = { role: state.role, all: true, from: list[0], to: list[list.length - 1] }; openDlc = {}; }
+    document.querySelectorAll("[data-range]").forEach(function (b) {
+      var on = (b.dataset.range === "all") === range.all;
+      b.classList.toggle("on", on);
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    el.rangeRow.hidden = range.all;
+    var last = DBD_DLCS[list[list.length - 1]];
+    el.rangeInfo.textContent = range.all
+      ? "全期間(基本〜" + (last.d ? last.d.slice(0, 7) : "最新") + ")の " + list.length + " 件"
+      : dlcLabel(DBD_DLCS[range.from]) + " 〜 " + dlcLabel(DBD_DLCS[range.to]);
     [el.dlcFrom, el.dlcTo].forEach(function (sel, k) {
       sel.textContent = "";
       list.forEach(function (i) {
@@ -489,7 +506,7 @@
     return DBD_PERKS.filter(function (p) {
       if (p.r !== state.role) return false;
       var d = dlcOf(p);
-      if (d < range.from || d > range.to) return false;
+      if (!range.all && (d < range.from || d > range.to)) return false;
       if (!q) return true;
       return (p.ja + "\n" + p.en + "\n" + charLabel(p) + "\n" + DBD_DLCS[d].ja).toLowerCase().indexOf(q) >= 0;
     });
@@ -516,6 +533,37 @@
     li.appendChild(label);
     return li;
   }
+  // DLC の見出し: ▶(開閉)・チェック(まとめて切り替え)・名前(押すと開閉)・公開日と件数
+  function groupRow(dl, open, state, onToggle, onCheck, meta) {
+    var li = document.createElement("li");
+    li.className = "grp" + (open ? " open" : "");
+    var tw = document.createElement("button");
+    tw.type = "button";
+    tw.className = "twisty";
+    tw.setAttribute("aria-expanded", open ? "true" : "false");
+    tw.setAttribute("aria-label", (open ? "閉じる: " : "開く: ") + dl.ja);
+    tw.textContent = open ? "▼" : "▶";
+    tw.addEventListener("click", onToggle);
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state === true;
+    cb.indeterminate = state === null;
+    cb.setAttribute("aria-label", dl.ja + " をまとめて切り替え");
+    cb.addEventListener("change", function () { onCheck(cb.checked); });
+    var name = document.createElement("span");
+    name.className = "name";
+    name.textContent = dl.ja;
+    name.addEventListener("click", onToggle);
+    var m = document.createElement("span");
+    m.className = "en";
+    m.textContent = meta;
+    li.appendChild(tw);
+    li.appendChild(cb);
+    li.appendChild(name);
+    li.appendChild(m);
+    if (state === false) li.classList.add("off");
+    return li;
+  }
   function renderPool() {
     var ex = {};
     cur().excluded.forEach(function (id) { ex[id] = true; });
@@ -524,30 +572,40 @@
     el.poolCount.textContent = (all.length - cur().excluded.length) + " / " + all.length + " 個を抽選";
     fillRange();
     renderPresets();
+    var scroll = el.poolList.scrollTop; // 作り直しても見ていた位置のまま
     el.poolList.textContent = "";
-    // DLC ごとにまとめる。見出しのチェックはその DLC の(表示中の)パークをまとめて切り替える
+    var searching = el.poolSearch.value.trim() !== "";
+    // DLC ごとにまとめる。見出しのチェックはその DLC の(条件に合う)パークをまとめて切り替える
     var byDlc = {};
     poolVisible().forEach(function (p) { (byDlc[dlcOf(p)] = byDlc[dlcOf(p)] || []).push(p); });
     var groups = Object.keys(byDlc).map(Number).sort(function (a, b) { return a - b; })
       .map(function (d) { return { d: d, perks: byDlc[d] }; });
+    var anyClosed = false;
     groups.forEach(function (g) {
       var on = g.perks.filter(function (p) { return !ex[p.id]; }).length;
       var ids = g.perks.map(function (p) { return p.id; });
       var dl = DBD_DLCS[g.d];
-      el.poolList.appendChild(checkboxRow(dl.ja, (dl.d || (dl.id ? "公開日不明" : "")) + "  " + on + " / " + g.perks.length,
-        on === g.perks.length ? true : on === 0 ? false : null,
-        function (checked) { setExcluded(ids, !checked); }, "grp"));
+      var open = searching || !!openDlc[g.d];
+      if (!open) anyClosed = true;
+      el.poolList.appendChild(groupRow(dl, open, on === g.perks.length ? true : on === 0 ? false : null,
+        function () { openDlc[g.d] = !openDlc[g.d]; renderPool(); },
+        function (checked) { setExcluded(ids, !checked); },
+        (dl.d || (dl.id ? "公開日不明" : "")) + "  " + on + " / " + g.perks.length));
+      if (!open) return;
       g.perks.forEach(function (p) {
         el.poolList.appendChild(checkboxRow(p.ja, p.en + " / " + charLabel(p), !ex[p.id],
-          function (checked) { setExcluded([p.id], !checked); }));
+          function (checked) { setExcluded([p.id], !checked); }, "child"));
       });
     });
+    el.treeToggle.textContent = anyClosed ? "すべて開く" : "すべて閉じる";
+    el.treeToggle.disabled = searching || !groups.length;
     if (!groups.length) {
       var li = document.createElement("li");
       li.className = "empty";
       li.textContent = "見つかりません";
       el.poolList.appendChild(li);
     }
+    el.poolList.scrollTop = scroll;
   }
   function setExcluded(ids, off) {
     var c = cur();
@@ -677,6 +735,15 @@
   el.poolBtn.addEventListener("click", openPool);
   el.poolClose.addEventListener("click", function () { el.pool.hidden = true; });
   el.poolSearch.addEventListener("input", renderPool);
+  document.querySelectorAll("[data-range]").forEach(function (b) {
+    b.addEventListener("click", function () { range.all = b.dataset.range === "all"; renderPool(); });
+  });
+  el.treeToggle.addEventListener("click", function () {
+    var open = el.treeToggle.textContent === "すべて開く";
+    openDlc = {};
+    if (open) roleDlcs().forEach(function (i) { openDlc[i] = true; });
+    renderPool();
+  });
   el.dlcFrom.addEventListener("change", function () {
     range.from = Number(el.dlcFrom.value);
     if (range.to < range.from) range.to = range.from;
