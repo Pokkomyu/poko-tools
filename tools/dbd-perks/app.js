@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.2.2"; // tool.json と揃える
+  var VERSION = "0.2.3"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
@@ -36,10 +36,10 @@
   function roleState() {
     return { slots: [null, null, null, null], locked: [false, false, false, false], excluded: [] };
   }
-  var BG_MODES = ["auto", "transparent", "pink", "green"];
+  var BG_MODES = ["transparent", "pink", "green"];
   var PRESET_MAX = 10;   // 役割ごと
   var PRESET_NAME_MAX = 20;
-  var state = { role: "k", layout: "row", bg: "auto", showIcon: true, showFrame: true, showName: true, showChar: false, sound: true, k: roleState(), s: roleState(),
+  var state = { role: "k", layout: "row", bg: "transparent", showIcon: true, showFrame: true, showName: true, showChar: false, sound: true, k: roleState(), s: roleState(),
                 presets: { k: [], s: [] } }; // presets: 有効 / 無効のセット { name, excluded: [外した ID] }
 
   function load() {
@@ -50,7 +50,7 @@
       if (saved.layout === "row" || saved.layout === "diamond") state.layout = saved.layout;
       state.showIcon = saved.showIcon !== false;
       state.showFrame = saved.showFrame !== false;
-      if (BG_MODES.indexOf(saved.bg) >= 0) state.bg = saved.bg;
+      if (BG_MODES.indexOf(saved.bg) >= 0) state.bg = saved.bg; // 0.2.2 の「自動」は透過と同じなので透過のまま
       state.showName = saved.showName !== false;
       state.showChar = !!saved.showChar;
       state.sound = saved.sound !== false;
@@ -125,11 +125,12 @@
   // ---------- layout ----------
 
   var isObs = typeof window.obsstudio !== "undefined";
-  // 背景: 自動(OBS の中では透過、ブラウザではプレビュー用のピンク)/ 透過 / ピンク / グリーン(クロマキー用)。
-  // URL の ?bg=transparent は前からの指定なので、パネルの設定より優先する
+  // 背景: 透過(OBS の中では透明、ブラウザでは市松模様で見せる。tracker / deco-poko と同じ)/ ピンク / グリーン(クロマキー用)。
+  // URL の ?bg=transparent は前からの指定で、ブラウザでも市松模様を出さずに透明にする(パネルの設定より優先)
+  var urlTransparent = params.get("bg") === "transparent";
   function applyBg() {
-    var mode = params.get("bg") === "transparent" ? "transparent" : state.bg;
-    if (mode === "auto") mode = isObs ? "transparent" : "pink";
+    var mode = urlTransparent ? "transparent" : state.bg;
+    document.body.classList.toggle("checker", mode === "transparent" && !isObs && !urlTransparent);
     document.body.classList.toggle("preview", mode === "pink");
     document.body.classList.toggle("green", mode === "green");
   }
