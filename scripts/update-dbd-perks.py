@@ -159,23 +159,65 @@ def download_icons(icon_titles, old_icons):
     return failed
 
 
+# ---------- DLC(パークの設定で時期ごとに絞り込む用) ----------
+
+BASE_DLC = {"id": "", "ja": "基本・共通", "d": ""}
+
+
+def build_dlcs(perks_ja, chars, dlc_ja, dlc_en):
+    """{perk id: DLC の id} と、公開順に並べた DLC の一覧を返す。
+    基本キャラ(dlc なし)と共通パークは BASE_DLC("")。DLC の id は大文字小文字がずれていることがある(SUSHI_CHPTR40 / Sushi_CHPTR40)"""
+    by_lower = {k.lower(): k for k in dlc_ja}
+    perk_dlc = {}
+    for pid, p in perks_ja.items():
+        c = p.get("character")
+        code = (chars.get(str(c)) or {}).get("dlc") if c is not None else None
+        perk_dlc[pid] = by_lower.get(code.lower(), code) if code else ""
+    used = sorted({d for d in perk_dlc.values() if d})
+    # 公開日が 0 の DLC(出たばかり)は、パーク番号(S52P01 など)が 1 つ前の DLC のすぐ後ろに置く
+    nums = {}  # DLC → {(S/K, 番号)}。1 つの DLC にキラーとサバイバーの両方があることがある(Poutine = K42 + S50/S51)
+    for pid, d in perk_dlc.items():
+        m = re.match(r"([SK])(\d+)P\d+$", pid)
+        if d and m:
+            nums.setdefault(d, set()).add((m.group(1), int(m.group(2))))
+    t = {d: (dlc_ja.get(d) or {}).get("time") or 0 for d in used}
+    for d in sorted((d for d in used if not t[d] and d in nums), key=lambda d: min(n for _, n in nums[d])):
+        prev = [t[x] for x in used if t[x] and x != d and any(r == r2 and n2 < n for r, n in nums[d] for r2, n2 in nums.get(x, ()))]
+        t[d] = max(prev) + 1 if prev else max(t.values())
+    def name(d):
+        for src in (dlc_ja, dlc_en):
+            n = clean((src.get(d) or {}).get("name") or "")
+            if n and not n.startswith("@#"):
+                return n
+        return d
+    dlcs = [BASE_DLC] + [
+        {"id": d, "ja": name(d),
+         "d": datetime.datetime.fromtimestamp((dlc_ja.get(d) or {}).get("time") or 0, datetime.timezone.utc).date().isoformat()
+              if (dlc_ja.get(d) or {}).get("time") else ""}
+        for d in sorted(used, key=lambda d: (t[d], d))]
+    return perk_dlc, dlcs
+
+
 # ---------- perks-data.js ----------
 
 def read_old():
     if not DATA.is_file():
-        return [], ""
+        return [], [], ""
     text = DATA.read_text(encoding="utf-8")
     m = re.search(r'DBD_PERKS_DATE = "([^"]*)"', text)
     perks = [json.loads(line.rstrip(",")) for line in text.splitlines() if line.startswith('{"id"')]
-    return perks, (m.group(1) if m else "")
+    d = re.search(r"^var DBD_DLCS = (.*);$", text, re.M)
+    return perks, (json.loads(d.group(1)) if d else []), (m.group(1) if m else "")
 
 
-def write_data(perks, date):
+def write_data(perks, dlcs, date):
     lines = ",\n".join(json.dumps(x, ensure_ascii=False, separators=(",", ":")) for x in perks)
     DATA.write_text(
         "/* scripts/update-dbd-perks.py で生成(手で編集しない)。出典: https://dbd.tricky.lol/ ・ https://deadbydaylight.wiki.gg/\n"
         " * パーク名・キャラ名・アイコンは Behaviour Interactive Inc. の著作物 */\n"
         f'var DBD_PERKS_DATE = "{date}";\n'
+        "// 公開順(先頭は基本・共通)。d は公開日(出たばかりで不明なものは空)\n"
+        f"var DBD_DLCS = {json.dumps(dlcs, ensure_ascii=False, separators=(',', ':'))};\n"
         f"var DBD_PERKS = [\n{lines}\n];\n",
         encoding="utf-8")
 
@@ -212,10 +254,13 @@ def main():
     ja = get(TRICKY + "/perks?locale=ja")
     en = get(TRICKY + "/perks?locale=en")
     chars = get(TRICKY + "/characters?locale=ja")
+    dlc_ja = get(TRICKY + "/dlc?locale=ja")
+    dlc_en = get(TRICKY + "/dlc")
     if len(ja) < 100 or set(ja) != set(en):
         sys.exit(f"NG: tricky.lol のデータがおかしい(ja {len(ja)} 件 / en {len(en)} 件)。書き換えない")
 
-    old, old_date = read_old()
+    old, old_dlcs, old_date = read_old()
+    perk_dlc, dlcs = build_dlcs(ja, chars, dlc_ja, dlc_en)
     old_by = {p["id"]: p for p in old}
     icon_titles = find_icons(en)
     failed = set(download_icons(icon_titles, {p["id"]: p.get("icon") for p in old if p.get("icon")}))
@@ -231,6 +276,7 @@ def main():
             "ja": clean(p["name"]),
             "en": clean(en.get(pid, {}).get("name", "")),
             "ch": clean(chars[str(c)]["name"]) if c is not None and str(c) in chars else "",
+            "dlc": perk_dlc.get(pid, ""),
         }
         icon = icon_titles.get(pid)
         if icon and pid not in failed:
@@ -245,7 +291,7 @@ def main():
     removed = [p["ja"] for p in old if p["id"] not in new_ids]
     renamed = [p["ja"] for p in perks if p["id"] in old_by and old_by[p["id"]] != p]
     no_icon = [f'{p["ja"]}({p["en"]})' for p in perks if "icon" not in p]
-    changed = perks != old
+    changed = perks != old or dlcs != old_dlcs
 
     for p in old:  # 消えたパークの画像は置いたままにしない
         f = ICONS / f'{p["id"]}.png'
@@ -254,7 +300,7 @@ def main():
 
     date = datetime.date.today().isoformat() if changed or not old_date else old_date
     if changed:
-        write_data(perks, date)
+        write_data(perks, dlcs, date)
     version = bump_version(added, removed, renamed) if changed and old and args.bump else None
 
     count = {r: sum(1 for x in perks if x["r"] == r) for r in "ks"}

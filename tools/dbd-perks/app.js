@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "0.1.0"; // tool.json と揃える
+  var VERSION = "0.2.0"; // tool.json と揃える
   var STAGE_W = 1920;
   var STAGE_H = 1080;
   var SLOTS = 4;
@@ -36,7 +36,10 @@
   function roleState() {
     return { slots: [null, null, null, null], locked: [false, false, false, false], excluded: [] };
   }
-  var state = { role: "k", layout: "row", showIcon: true, showChar: false, sound: true, k: roleState(), s: roleState() };
+  var PRESET_MAX = 10;   // 役割ごと
+  var PRESET_NAME_MAX = 20;
+  var state = { role: "k", layout: "row", showIcon: true, showFrame: true, showChar: false, sound: true, k: roleState(), s: roleState(),
+                presets: { k: [], s: [] } }; // presets: 有効 / 無効のセット { name, excluded: [外した ID] }
 
   function load() {
     try {
@@ -45,6 +48,7 @@
       if (saved.role === "k" || saved.role === "s") state.role = saved.role;
       if (saved.layout === "row" || saved.layout === "diamond") state.layout = saved.layout;
       state.showIcon = saved.showIcon !== false;
+      state.showFrame = saved.showFrame !== false;
       state.showChar = !!saved.showChar;
       state.sound = saved.sound !== false;
       ["k", "s"].forEach(function (r) {
@@ -56,6 +60,11 @@
           dst.locked[i] = !!(src.locked && src.locked[i]) && dst.slots[i] !== null;
         }
         dst.excluded = Array.isArray(src.excluded) ? src.excluded.filter(function (id) { return byId[id]; }) : [];
+        var ps = saved.presets && Array.isArray(saved.presets[r]) ? saved.presets[r] : [];
+        state.presets[r] = ps.filter(function (x) { return x && typeof x.name === "string" && Array.isArray(x.excluded); })
+          .slice(0, PRESET_MAX).map(function (x) {
+            return { name: x.name.slice(0, PRESET_NAME_MAX), excluded: x.excluded.filter(function (id) { return byId[id]; }) };
+          });
       });
     } catch (e) { /* 壊れていたら初期状態 */ }
   }
@@ -81,6 +90,7 @@
     rows: $("rows"),
     optIcon: $("optIcon"),
     optIconLabel: $("optIconLabel"),
+    optFrame: $("optFrame"),
     optChar: $("optChar"),
     optSound: $("optSound"),
     poolBtn: $("poolBtn"),
@@ -96,7 +106,15 @@
     poolCount: $("poolCount"),
     poolAll: $("poolAll"),
     poolNone: $("poolNone"),
-    poolList: $("poolList")
+    poolList: $("poolList"),
+    presetSel: $("presetSel"),
+    presetLoad: $("presetLoad"),
+    presetDel: $("presetDel"),
+    presetName: $("presetName"),
+    presetSave: $("presetSave"),
+    presetNow: $("presetNow"),
+    dlcFrom: $("dlcFrom"),
+    dlcTo: $("dlcTo")
   };
 
   // ---------- layout ----------
@@ -231,7 +249,8 @@
     var c = cur();
     document.querySelectorAll("[data-role]").forEach(function (b) { b.classList.toggle("on", b.dataset.role === state.role); });
     document.querySelectorAll("[data-layout]").forEach(function (b) { b.classList.toggle("on", b.dataset.layout === state.layout); });
-    el.slots.className = "slots layout-" + state.layout + (iconMode() ? " icons" : "");
+    el.slots.className = "slots layout-" + state.layout + (iconMode() ? " icons" : "") + (state.showFrame ? "" : " no-frame");
+    el.optFrame.checked = state.showFrame;
     el.optIcon.checked = iconMode();
     el.optIcon.disabled = !iconsAvailable;
     el.optIconLabel.title = iconsAvailable ? "" : "画像は Web 版(GitHub Pages)だけ。zip 版は文字だけです";
@@ -399,18 +418,75 @@
 
   // ---------- パークの設定(除外) ----------
 
+  // DLC: DBD_DLCS は公開順(先頭は基本・共通)。パークの dlc は DBD_DLCS の id
+  var dlcIndex = {};
+  DBD_DLCS.forEach(function (d, i) { dlcIndex[d.id] = i; });
+  function dlcOf(p) { return dlcIndex[p.dlc] !== undefined ? dlcIndex[p.dlc] : 0; }
+  function dlcLabel(d) {
+    var name = d.ja.replace(/^「(.*)」チャプター$/, "$1");
+    return d.id === "" ? name : (d.d ? d.d.slice(0, 7) : "最近") + " " + name;
+  }
+  // 時期の絞り込み(開いている間だけ。役割を変えたら全期間に戻す)
+  var range = { role: "", from: 0, to: DBD_DLCS.length - 1 };
+
   function openPool() {
     el.pool.hidden = false;
     el.poolSearch.value = "";
+    el.presetName.value = "";
+    range.role = "";
+    picked = -1;
     renderPool();
+  }
+  function roleDlcs() {
+    var has = {};
+    DBD_PERKS.forEach(function (p) { if (p.r === state.role) has[dlcOf(p)] = true; });
+    return DBD_DLCS.map(function (d, i) { return i; }).filter(function (i) { return has[i]; });
+  }
+  function fillRange() {
+    var list = roleDlcs();
+    if (range.role !== state.role) range = { role: state.role, from: list[0], to: list[list.length - 1] };
+    [el.dlcFrom, el.dlcTo].forEach(function (sel, k) {
+      sel.textContent = "";
+      list.forEach(function (i) {
+        var o = document.createElement("option");
+        o.value = i;
+        o.textContent = dlcLabel(DBD_DLCS[i]);
+        sel.appendChild(o);
+      });
+      sel.value = k ? range.to : range.from;
+    });
   }
   function poolVisible() {
     var q = el.poolSearch.value.trim().toLowerCase();
     return DBD_PERKS.filter(function (p) {
       if (p.r !== state.role) return false;
+      var d = dlcOf(p);
+      if (d < range.from || d > range.to) return false;
       if (!q) return true;
-      return (p.ja + "\n" + p.en + "\n" + charLabel(p)).toLowerCase().indexOf(q) >= 0;
+      return (p.ja + "\n" + p.en + "\n" + charLabel(p) + "\n" + DBD_DLCS[d].ja).toLowerCase().indexOf(q) >= 0;
     });
+  }
+  function checkboxRow(text, sub, state, onChange, cls) {
+    var li = document.createElement("li");
+    var label = document.createElement("label");
+    if (cls) li.className = cls;
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state === true;
+    cb.indeterminate = state === null;
+    cb.addEventListener("change", function () { onChange(cb.checked); });
+    var name = document.createElement("span");
+    name.className = "name";
+    name.textContent = text;
+    var subEl = document.createElement("span");
+    subEl.className = "en";
+    subEl.textContent = sub;
+    if (state === false) label.className = "off";
+    label.appendChild(cb);
+    label.appendChild(name);
+    label.appendChild(subEl);
+    li.appendChild(label);
+    return li;
   }
   function renderPool() {
     var ex = {};
@@ -418,27 +494,32 @@
     var all = DBD_PERKS.filter(function (p) { return p.r === state.role; });
     el.poolTitle.textContent = (state.role === "k" ? "キラー" : "サバイバー") + "のパーク";
     el.poolCount.textContent = (all.length - cur().excluded.length) + " / " + all.length + " 個を抽選";
+    fillRange();
+    renderPresets();
     el.poolList.textContent = "";
-    poolVisible().forEach(function (p) {
-      var li = document.createElement("li");
-      var label = document.createElement("label");
-      var cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !ex[p.id];
-      cb.addEventListener("change", function () { setExcluded([p.id], !cb.checked); });
-      var name = document.createElement("span");
-      name.className = "name";
-      name.textContent = p.ja;
-      var sub = document.createElement("span");
-      sub.className = "en";
-      sub.textContent = p.en + " / " + charLabel(p);
-      if (ex[p.id]) label.className = "off";
-      label.appendChild(cb);
-      label.appendChild(name);
-      label.appendChild(sub);
-      li.appendChild(label);
-      el.poolList.appendChild(li);
+    // DLC ごとにまとめる。見出しのチェックはその DLC の(表示中の)パークをまとめて切り替える
+    var byDlc = {};
+    poolVisible().forEach(function (p) { (byDlc[dlcOf(p)] = byDlc[dlcOf(p)] || []).push(p); });
+    var groups = Object.keys(byDlc).map(Number).sort(function (a, b) { return a - b; })
+      .map(function (d) { return { d: d, perks: byDlc[d] }; });
+    groups.forEach(function (g) {
+      var on = g.perks.filter(function (p) { return !ex[p.id]; }).length;
+      var ids = g.perks.map(function (p) { return p.id; });
+      var dl = DBD_DLCS[g.d];
+      el.poolList.appendChild(checkboxRow(dl.ja, (dl.d || (dl.id ? "公開日不明" : "")) + "  " + on + " / " + g.perks.length,
+        on === g.perks.length ? true : on === 0 ? false : null,
+        function (checked) { setExcluded(ids, !checked); }, "grp"));
+      g.perks.forEach(function (p) {
+        el.poolList.appendChild(checkboxRow(p.ja, p.en + " / " + charLabel(p), !ex[p.id],
+          function (checked) { setExcluded([p.id], !checked); }));
+      });
     });
+    if (!groups.length) {
+      var li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "見つかりません";
+      el.poolList.appendChild(li);
+    }
   }
   function setExcluded(ids, off) {
     var c = cur();
@@ -451,12 +532,104 @@
     render();
   }
 
+  // ---------- プリセット(有効 / 無効のセット。役割ごと) ----------
+
+  function sameSet(a, b) {
+    if (a.length !== b.length) return false;
+    var m = {};
+    a.forEach(function (id) { m[id] = true; });
+    return b.every(function (id) { return m[id]; });
+  }
+  function presets() { return state.presets[state.role]; }
+  function presetIndexByName(name) {
+    for (var i = 0; i < presets().length; i++) if (presets()[i].name === name) return i;
+    return -1;
+  }
+  var delArmed = -1, delTimer = 0;
+  var picked = -1; // 一覧で選んだプリセット。選んでいなければ今の設定と同じものを選んでおく
+  function renderPresets() {
+    var ps = presets();
+    el.presetSel.textContent = "";
+    if (!ps.length) {
+      var o = document.createElement("option");
+      o.value = "";
+      o.textContent = "(まだありません)";
+      el.presetSel.appendChild(o);
+    }
+    ps.forEach(function (x, i) {
+      var o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = x.name + "(" + (DBD_PERKS.filter(function (p) { return p.r === state.role; }).length - x.excluded.length) + " 個)";
+      el.presetSel.appendChild(o);
+    });
+    var match = -1;
+    ps.forEach(function (x, i) { if (match < 0 && sameSet(x.excluded, cur().excluded)) match = i; });
+    if (picked >= ps.length) picked = -1;
+    if (picked >= 0) el.presetSel.value = String(picked);
+    else if (match >= 0) el.presetSel.value = String(match);
+    el.presetNow.textContent = match >= 0 ? "使用中: " + ps[match].name : ps.length ? "今の設定はどのプリセットとも違います" : "";
+    el.presetLoad.disabled = el.presetDel.disabled = !ps.length;
+    el.presetDel.textContent = delArmed >= 0 ? "本当に削除?" : "削除";
+    el.presetDel.classList.toggle("on", delArmed >= 0);
+    var name = el.presetName.value.trim();
+    var over = name && presetIndexByName(name) >= 0;
+    el.presetSave.textContent = over ? "上書き保存" : "今の設定を保存";
+    el.presetSave.disabled = !over && ps.length >= PRESET_MAX;
+    el.presetSave.title = el.presetSave.disabled ? "プリセットは " + PRESET_MAX + " 個まで。上書きするか、削除してね" : "";
+  }
+  function savePreset() {
+    var ps = presets();
+    var name = el.presetName.value.trim().slice(0, PRESET_NAME_MAX);
+    var n = 1;
+    while (!name) { if (presetIndexByName("プリセット" + n) < 0) name = "プリセット" + n; n++; }
+    var i = presetIndexByName(name);
+    var item = { name: name, excluded: cur().excluded.slice() };
+    if (i >= 0) ps[i] = item;
+    else if (ps.length < PRESET_MAX) ps.push(item);
+    else return;
+    el.presetName.value = "";
+    picked = -1;
+    save();
+    renderPool();
+    showToast("プリセット「" + name + "」を保存しました");
+  }
+  function loadPreset() {
+    var x = presets()[Number(el.presetSel.value)];
+    if (!x) return;
+    cur().excluded = x.excluded.filter(function (id) { return byId[id] && byId[id].r === state.role; });
+    picked = -1;
+    save();
+    renderPool();
+    render();
+    showToast("プリセット「" + x.name + "」を呼び出しました");
+  }
+  // confirm() は OBS の対話で出ないので、2 回押しで消す
+  function deletePreset() {
+    var i = Number(el.presetSel.value);
+    if (!presets()[i]) return;
+    clearTimeout(delTimer);
+    if (delArmed !== i) {
+      delArmed = i;
+      delTimer = setTimeout(function () { delArmed = -1; renderPresets(); }, 3000);
+      renderPresets();
+      return;
+    }
+    var name = presets()[i].name;
+    presets().splice(i, 1);
+    delArmed = -1;
+    picked = -1;
+    save();
+    renderPool();
+    showToast("プリセット「" + name + "」を削除しました");
+  }
+
   // ---------- events ----------
 
   document.querySelectorAll("[data-role]").forEach(function (b) {
     b.addEventListener("click", function () {
       if (spinning) return;
       state.role = b.dataset.role;
+      picked = -1;
       save();
       preloadIcons();
       render();
@@ -469,11 +642,27 @@
   el.slotBtns.forEach(function (b, i) { b.addEventListener("click", function () { spin([i]); }); });
   el.spinBtn.addEventListener("click", function () { spin([0, 1, 2, 3]); });
   el.optIcon.addEventListener("change", function () { state.showIcon = el.optIcon.checked; save(); preloadIcons(); render(); });
+  el.optFrame.addEventListener("change", function () { state.showFrame = el.optFrame.checked; save(); render(); });
   el.optChar.addEventListener("change", function () { state.showChar = el.optChar.checked; save(); render(); });
   el.optSound.addEventListener("change", function () { state.sound = el.optSound.checked; save(); });
   el.poolBtn.addEventListener("click", openPool);
   el.poolClose.addEventListener("click", function () { el.pool.hidden = true; });
   el.poolSearch.addEventListener("input", renderPool);
+  el.dlcFrom.addEventListener("change", function () {
+    range.from = Number(el.dlcFrom.value);
+    if (range.to < range.from) range.to = range.from;
+    renderPool();
+  });
+  el.dlcTo.addEventListener("change", function () {
+    range.to = Number(el.dlcTo.value);
+    if (range.from > range.to) range.from = range.to;
+    renderPool();
+  });
+  el.presetSel.addEventListener("change", function () { picked = Number(el.presetSel.value); delArmed = -1; renderPresets(); });
+  el.presetName.addEventListener("input", renderPresets);
+  el.presetSave.addEventListener("click", savePreset);
+  el.presetLoad.addEventListener("click", loadPreset);
+  el.presetDel.addEventListener("click", deletePreset);
   el.poolAll.addEventListener("click", function () { setExcluded(poolVisible().map(function (p) { return p.id; }), false); });
   el.poolNone.addEventListener("click", function () { setExcluded(poolVisible().map(function (p) { return p.id; }), true); });
   window.addEventListener("resize", fitStage);
