@@ -272,6 +272,11 @@
     const mine = msg.tmp ? pending.get(msg.tmp) : null;
     if (msg.tmp) { pending.delete(msg.tmp); live.delete(msg.tmp); }
     if (op.kind === 'clear') { for (const i of opLayers(op)) rebuild(i); return board.render(); }
+    if (op.kind === 'erase') {
+      // 線ごと消す(デコポコ 1.2.0)。自分が送ったものなら、隠していた線はこの op で消えたままになる
+      if (op.seat === seat) hideErase = null;
+      rebuild(op.layer); return board.render();
+    }
     if (mine) {
       // 描き始めてから他の op が入っていなければ末尾に足す(縁取りのまとまりも描き直しと同じになる)
       if (mine.seenSeq === prev) board.appendLayer(op.layer, [op]);
@@ -302,14 +307,24 @@
   // レイヤー i = 取り消していない op を seq 順に。消去は scope=all ならそれまでの全員の線、mine ならその席の線を消す。
   // 消去は縁取りのまとまりも区切る(1 人のときと同じ)
   const BREAK = { kind: 'break' };
-  function rebuild(i) {
+  // レイヤー i に見えている op(線ごと消した線・erase op 自体・送ったばかりで返事待ちの線ごと消しは飛ばす)
+  function visibleOps(i) {
+    const gone = new Set();
+    for (const op of ops) if (op.kind === 'erase' && !undone.has(op.id)) for (const t of op.targets || []) gone.add(t);
+    if (hideErase && hideErase.layer === i) for (const t of hideErase.ids) gone.add(t);
     let vis = [];
     for (const op of ops) {
-      if (undone.has(op.id)) continue;
+      if (undone.has(op.id) || op.kind === 'erase' || gone.has(op.id)) continue;
       if (op.kind === 'clear') {
         if (op.layer === 'all' || op.layer === i) { vis = op.scope === 'mine' ? vis.filter(o => o.seat !== op.seat) : []; vis.push(BREAK); }
       } else if (op.layer === i) vis.push(op);
     }
+    return vis;
+  }
+  // 線ごと消す: なぞっている途中 / 送ってから op が返るまで隠す線({layer, ids})
+  let hideErase = null, hideTimer = 0;
+  function rebuild(i) {
+    const vis = visibleOps(i);
     board.relayer(i, vis);
     // 確定待ちの自分の消しゴムはレイヤーに直接描いているので、描き直したら重ね直す(縁取りのまとまりも区切れる)
     const extra = [...pending.values()].filter(p => !p.canvas && p.op.layer === i).map(p => p.op);
@@ -332,6 +347,7 @@
     return {
       id: o.id, seq: o.seq, seat: o.seat, kind: o.kind || 'stroke', layer: o.layer, scope: o.scope,
       tool: o.tool, color: o.color, alpha: o.alpha, size: o.size, osize: o.osize,
+      targets: Array.isArray(o.targets) ? o.targets : undefined,
       ec: edgeHex(o.edge),
       pts: (pts || []).map(p => Array.isArray(p) ? { x: p[0], y: p[1] } : p),
     };
@@ -373,6 +389,21 @@
       setTimeout(() => { if (pending.has(op.tmp)) onAbort(op.tmp); }, PENDING_TIMEOUT_MS);
     },
     clear(layer) { send({ t: 'clear', layer, scope: seat === 'host' ? 'all' : 'mine' }); },
+    // オブジェクト消しゴム(1.2.0): 線ごと消せるのは自分の線だけ(サーバーも自分の線以外は外す)
+    erasable(i) { return visibleOps(i).filter(o => o.kind === 'stroke' && o.tool !== 'eraser' && o.seat === seat); },
+    previewErase(i, ids) {
+      clearTimeout(hideTimer);
+      hideErase = ids && ids.size ? { layer: i, ids: new Set(ids) } : null;
+      rebuild(i); board.render();
+    },
+    erase(i, targets) {
+      if (!welcomed) { hideErase = null; rebuild(i); board.render(); return; }
+      hideErase = { layer: i, ids: new Set(targets) };
+      send({ t: 'erase', layer: i, targets });
+      // 返事が来ない(古いサーバー・断られた)ときは戻す
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => { if (hideErase && hideErase.layer === i) { hideErase = null; rebuild(i); board.render(); } }, PENDING_TIMEOUT_MS);
+    },
     undo() { send({ t: 'undo' }); },
     redo() { send({ t: 'redo' }); },
     renderLayer(ctx, i) {
