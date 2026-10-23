@@ -19,12 +19,13 @@ files = []
 # 直下の *.html はすべて入れる(tracker のように色ごとに HTML を分けるツールがある)
 for p in sorted(src.glob("*.html")):
     files.append((p, p.name))
-# 直下の *.js / *.css もすべて入れる(デコポコ プラスの collab.js のように、有償版だけのファイルがある)
+# 直下の *.js / *.css もすべて入れる(デコポコ プラスの collab.js、dbd-perks の perks-data.js、roulette の style.css など)
 for p in sorted(list(src.glob("*.js")) + list(src.glob("*.css"))):
     files.append((p, p.name))
 for f in ["CREDITS.md", "CHANGELOG.md"]:
     if (src / f).is_file():
         files.append((src / f, f))
+# icons/ は入れない(dbd-perks のパーク画像は Behaviour Interactive の素材で、GitHub Pages 版だけに置く)
 if (src / "assets").is_dir():
     files += [(p, str(p.relative_to(src))) for p in sorted((src / "assets").rglob("*")) if p.is_file()]
 files.append((src / "MANUAL.md", "使い方.txt"))

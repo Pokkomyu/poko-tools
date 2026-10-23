@@ -82,13 +82,15 @@
   /* 画面に出る小パレット(右クリック / 長押し) */
   #qp { position: fixed; z-index: 30; width: 252px; padding: 8px; border-radius: 12px; background: var(--panel);
     border: 1px solid var(--panel-edge); box-shadow: 0 8px 24px rgba(0,0,0,.45); color: var(--ink); font-size: 12px; }
-  #qp .qtools { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-bottom: 6px; }
+  #qp .qtools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-bottom: 6px; }
   #qp .qtools button { padding: 5px 0; white-space: nowrap; letter-spacing: -.02em; border-radius: 7px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.04);
     color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
   #qp .qtools button.on { background: var(--accent-soft); border-color: var(--accent); }
   #qp .qsw { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
   #qp .qsw div { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.5); cursor: pointer; }
   #qp .qsw div.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* フチを付けられない道具(ネオン・水彩・消しゴム)を選んでいる間はフチの欄を薄くする */
+  #panel.noedge .edgeRow { opacity: .35; pointer-events: none; }
   .btn:hover, .seg button:hover { background: rgba(255,255,255,.1); }
   .btn:disabled { opacity: .35; cursor: default; }
   input[type=range] { flex: 1; accent-color: var(--accent); margin: 0; }
@@ -145,11 +147,12 @@
     <div class="row">
       <label>ツール</label>
       <div class="seg" id="tools">
-        <button data-tool="brush">ペン</button>
-        <button data-tool="outline">縁取り</button>
-        <button data-tool="eraser">消しゴム</button>
+        <button data-tool="brush" title="ふつうの線。フチ幅を上げるとフチが付く">ペン</button>
+        <button data-tool="gloss" title="ツヤのある線。フチ幅を上げるとフチが付く">艶</button>
+        <button data-tool="marker" title="半透明。続けて描いても重なりが濃くならない。フチ幅を上げるとフチが付く">マーカー</button>
         <button data-tool="neon" title="線の色で光るペン">ネオン</button>
-        <button data-tool="marker" title="半透明。続けて描いても重なりが濃くならない">マーカー</button>
+        <button data-tool="watercolor" title="にじんだ水彩。重ねると濃くなる">水彩</button>
+        <button data-tool="eraser">消しゴム</button>
       </div>
     </div>
     <div class="row">
@@ -171,19 +174,19 @@
       <label>履歴</label>
       <div class="swatches" id="history" title="描いた色が入ります / 右クリックで削除"></div>
     </div>
-    <div class="row">
+    <div class="row edgeRow">
       <label>フチ色</label>
-      <div class="seg" id="oedge" title="縁取りのフチの色。自動はペンが明るいと黒、暗いと白">
+      <div class="seg" id="oedge" title="フチの色。自動はペンが明るいと黒、暗いと白">
         <button data-edge="auto">自動</button>
         <button data-edge="white">白</button>
         <button data-edge="black">黒</button>
         <button data-edge="custom" title="フチの色を自由に選ぶ">自由<span class="edot" id="ocolorDot"></span></button>
       </div>
     </div>
-    <div class="row">
+    <div class="row edgeRow">
       <label>フチ幅</label>
-      <input type="range" id="osize" min="1" max="30" value="4" title="縁取りのフチの太さ">
-      <span class="val" id="osizeVal">4</span>
+      <input type="range" id="osize" min="0" max="30" value="0" title="フチの太さ。0 はフチなし(ペン・艶・マーカーごとに覚える)">
+      <span class="val" id="osizeVal">0</span>
     </div>
     <div id="picker" class="closed">
       <div class="title" id="pickerTitle">ペンの色</div>
@@ -214,7 +217,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.0.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.1.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -246,7 +249,7 @@
     color: '#ff7fb3',
     oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
     ocolor: '#ffffff', // oedge が custom のときのフチ色
-    osize: 4,
+    eo: { brush: 0, gloss: 0, marker: 0 }, // フチ幅(道具ごと)。0 はフチなし
     active: 0,
     visible: [true, true, true],
     history: [],
@@ -277,6 +280,7 @@
   let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
   let scratch = null; // 描き直しで線 1 本を組み立てる作業用
   let mk = null;      // マーカーのまとまりを不透明で描いてから 40% で重ねる作業用
+  let gk = null, wk = null; // 艶・水彩・フチ付きマーカーを 1 本ずつ組み立てる作業用
 
   function resize(force) {
     VW = window.innerWidth; VH = window.innerHeight;
@@ -297,7 +301,7 @@
       layers[i] = grow(layers[i]); base[i] = grow(base[i]);
       L[i].below = grow(L[i].below); B[i].below = grow(B[i].below);
     }
-    temp = grow(null); scratch = grow(null); mk = grow(null);
+    temp = grow(null); scratch = grow(null); mk = grow(null); gk = grow(null); wk = grow(null);
     render();
   }
 
@@ -322,7 +326,7 @@
   }
 
   // ---------- 操作ログ(戻す / やり直す) ----------
-  // op = 線   {kind: 'stroke', layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize, pts: [{x, y}]}
+  // op = 線   {kind: 'stroke', layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize(フチ幅。0 はフチなし), pts: [{x, y}]}
   //    | 消去 {kind: 'clear', layer: 0..2 | 'all'}
   // レイヤーの画像 = base + そのレイヤーに関わる op を順に重ねたもの。戻すは最後の op を外して描き直す
   let ops = [], redoOps = [];
@@ -345,40 +349,109 @@
     paintStrokeTo(c, op);
     ctx.drawImage(scratch, x0, y0, w, h, x0, y0, w, h);
   }
-  // 線の種類: brush / outline / eraser / neon(光る)/ marker(半透明、重ねても濃くならない)
+  // 線の種類: brush / gloss(艶)/ marker(半透明、重ねても濃くならない)/ neon(光る)/ watercolor(水彩)/ eraser
+  //   brush・gloss・marker は osize > 0 でフチが付く(1.1.0 で「縁取り」ペンをこれに統合。2026-10-24 ぽこ)。
+  //   outline は 1.0.x までの縁取り(= フチ付きの brush)。古い版の相手から届いたときのために描ける形で残す
+  const EDGE_TOOLS = ['brush', 'gloss', 'marker'];
+  const hasEdge = op => op.tool === 'outline' || (EDGE_TOOLS.includes(op.tool) && op.osize > 0);
+  const wcBlur = op => Math.max(1, op.size * 0.08);
   const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
   const neonBlur = op => op.size * 1.5 + 6;
   // まとまりになる線の種類。縁取りはフチをまとめ、ネオンは光をまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る。
   // マーカーは濃さが同じものだけをまとめる(濃さを変えたら別のまとまり)ので、種類に濃さを含める
   const groupKind = op => {
     if (!op || op.kind === 'clear' || op.kind === 'break') return null;
-    if (op.tool === 'outline') return 'outline';
     if (op.tool === 'neon') return 'neon';
     if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
+    if (hasEdge(op)) return 'outline'; // フチ付きのペン・艶は、続く間フチをまとめる
     return null;
   };
   const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
   function strokeRadius(op) {
-    if (op.tool === 'outline') return (op.size + op.osize * 2) / 2 + 2;
     if (op.tool === 'neon') return op.size / 2 + neonBlur(op) * 1.5 + 2;
+    if (op.tool === 'watercolor') return op.size / 2 + wcBlur(op) * 3 + 2;
+    if (hasEdge(op)) return (op.size + op.osize * 2) / 2 + 2;
     return op.size / 2 + 2;
   }
-  function mixWhite(hex, t) {
+  function mixWhite(hex, t) { return mixTo(hex, 255, t); }
+  function mixTo(hex, to, t) {
     if (!/^#[0-9a-fA-F]{6}$/.test(hex || '')) return '#ffffff';
     const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-    const m = v => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0');
+    const m = v => Math.round(v + (to - v) * t).toString(16).padStart(2, '0');
     return '#' + m(r) + m(g) + m(b);
+  }
+  // 線の周り(余白 r)の矩形。作業用 canvas は毎回全面ではなくここだけ使う
+  function boxOf(list, r) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const o of list) for (const p of o.pts) { x0 = Math.min(x0, p.x - r); y0 = Math.min(y0, p.y - r); x1 = Math.max(x1, p.x + r); y1 = Math.max(y1, p.y + r); }
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
+    return w > 0 && h > 0 ? { x0, y0, w, h } : null;
+  }
+  // 艶ペン: 線の上側に白いツヤ、下側に少し濃い影を、線の形の中だけに重ねる(光は左上から)
+  function paintGloss(c, op) {
+    const b = boxOf([op], op.size / 2 + 2); if (!b) return;
+    const g = gk.getContext('2d');
+    g.clearRect(b.x0, b.y0, b.w, b.h);
+    drawPath(g, op.pts, op.size, op.color, 1);
+    const off = (dx, dy) => op.pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+    const s = op.size;
+    // source-atop = 線の形の中だけに重ねる(線の端の丸い所からはみ出さない)
+    drawPath(g, off(s * 0.14, s * 0.2), s * 0.55, mixTo(op.color, 0, 0.3), 0.55, 'source-atop'); // 下側の影
+    g.save(); g.filter = 'blur(' + Math.max(0.5, s * 0.05).toFixed(2) + 'px)';
+    drawPath(g, off(-s * 0.12, -s * 0.17), Math.max(1, s * 0.26), '#ffffff', 0.85, 'source-atop'); // ツヤ
+    g.restore();
+    c.save(); c.globalAlpha = op.alpha; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
+  }
+  // 水彩: ふちがにじんだ薄い色に、ふちに溜まった濃い色と紙の目を足す。線 1 本の中の重なりは濃くならず、
+  // 別の線と重なると濃くなる(重ね塗り)。紙の目は画面に固定した模様なので、描き直しても同じ画素になる
+  let paper = null;
+  function paperPattern(ctx) {
+    if (!paper) {
+      // 32x32 の乱数を 3 倍に引き伸ばして、細かい砂目ではなく、むらのある紙の目にする
+      const n = document.createElement('canvas'); n.width = n.height = 32;
+      const q = n.getContext('2d'), img = q.createImageData(32, 32);
+      let seed = 20261024; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+      for (let i = 0; i < img.data.length; i += 4) { img.data[i + 3] = Math.floor(rnd() * rnd() * 255); }
+      q.putImageData(img, 0, 0);
+      paper = document.createElement('canvas'); paper.width = paper.height = 96;
+      const p = paper.getContext('2d'); p.imageSmoothingEnabled = true; p.drawImage(n, 0, 0, 96, 96);
+    }
+    return ctx.createPattern(paper, 'repeat');
+  }
+  function paintWatercolor(c, op) {
+    const blur = wcBlur(op), b = boxOf([op], op.size / 2 + blur * 3 + 2); if (!b) return;
+    const g = gk.getContext('2d'), w = wk.getContext('2d');
+    g.clearRect(b.x0, b.y0, b.w, b.h); w.clearRect(b.x0, b.y0, b.w, b.h);
+    g.save(); g.filter = 'blur(' + blur.toFixed(2) + 'px)'; drawPath(g, op.pts, op.size, op.color, 1); g.restore();
+    // ふちの溜まり: にじんだ形から、細く強くぼかした芯を抜く
+    w.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    w.save(); w.filter = 'blur(' + (op.size * 0.18).toFixed(2) + 'px)';
+    drawPath(w, op.pts, op.size * 0.55, '#000', 1, 'destination-out'); w.restore();
+    for (const x of [g, w]) {
+      x.save(); x.globalCompositeOperation = 'destination-out'; x.globalAlpha = 0.6;
+      x.fillStyle = paperPattern(x); x.fillRect(b.x0, b.y0, b.w, b.h); x.restore();
+    }
+    c.save();
+    c.globalAlpha = op.alpha * 0.28; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    c.globalAlpha = op.alpha * 0.6; c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    c.restore();
+  }
+  // 線の本体(フチは含まない)
+  function paintBody(c, op) {
+    if (op.tool === 'gloss') return paintGloss(c, op);
+    drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
   // マーカーのペン先: 平たい(チゼル型)ペン先を斜め 75° に固定して、なぞった跡を塗る。
   // 横に引くと太く、縦に引くと細く、線の端は斜めに切れる(2026-10-16 ぽこの見本)
   const CHISEL_ANGLE = -Math.PI * 5 / 12;
-  function chiselPath(ctx, pts, size, color) {
+  function chiselPath(ctx, pts, size, color, lw = 1) {
     const nx = Math.cos(CHISEL_ANGLE) * size / 2, ny = Math.sin(CHISEL_ANGLE) * size / 2;
     ctx.save();
-    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineJoin = 'round';
     if (pts.length === 1) {
       const p = pts[0];
-      ctx.lineWidth = Math.max(2, size * 0.15); ctx.lineCap = 'butt';
+      ctx.lineWidth = Math.max(2, size * 0.15) + lw - 1; ctx.lineCap = lw > 1 ? 'round' : 'butt';
       ctx.beginPath(); ctx.moveTo(p.x + nx, p.y + ny); ctx.lineTo(p.x - nx, p.y - ny); ctx.stroke();
     }
     for (let i = 1; i < pts.length; i++) {
@@ -423,8 +496,9 @@
   function paintStrokeTo(c, op) {
     if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
     if (op.tool === 'neon') return paintNeonGroup(c, [op]);
-    if (op.tool === 'outline') drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
-    drawPath(c, op.pts, op.size, op.color, op.alpha);
+    if (op.tool === 'watercolor') return paintWatercolor(c, op);
+    if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
+    paintBody(c, op);
   }
   // まとまりを描く。縁取り: フチを全部 → 線を全部。マーカー: 不透明で全部描いてから 40% で 1 回だけ重ねる
   function paintGroupTo(c, grp, kind) {
@@ -433,7 +507,7 @@
       // 線の周りだけを作業用に使う(スマホで長いマーカーを描いても毎回全面を塗り直さない)
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const op of grp) {
-        const r = op.size / 2 + 2;
+        const r = op.size / 2 + 2 + (op.osize > 0 && op.ec ? op.osize : 0);
         for (const p of op.pts) { x0 = Math.min(x0, p.x - r); y0 = Math.min(y0, p.y - r); x1 = Math.max(x1, p.x + r); y1 = Math.max(y1, p.y + r); }
       }
       x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
@@ -442,11 +516,22 @@
       const m = mk.getContext('2d');
       m.clearRect(x0, y0, w, h);
       for (const op of grp) chiselPath(m, op.pts, op.size, op.color);
+      // フチ付き: ペン先をフチ幅だけ太らせた形をフチ色で塗り、マーカーの形をくり抜いてから下に敷く
+      //   (くり抜かないと、半透明のマーカーの下からフチ色が透けて濁る)
+      const edged = grp.filter(op => op.osize > 0 && op.ec);
+      if (edged.length) {
+        // 範囲はマーカーの範囲(フチ幅込み)と同じ。mk もこの範囲だけ消してあるので、外の古い絵は使わない
+        const e = wk.getContext('2d');
+        e.clearRect(x0, y0, w, h);
+        for (const op of edged) chiselPath(e, op.pts, op.size, op.ec, 1 + op.osize * 2);
+        e.save(); e.globalCompositeOperation = 'destination-out'; e.drawImage(mk, x0, y0, w, h, x0, y0, w, h); e.restore();
+        c.drawImage(wk, x0, y0, w, h, x0, y0, w, h);
+      }
       c.save(); c.globalAlpha = grp[0].alpha ?? MARKER_ALPHA; c.drawImage(mk, x0, y0, w, h, x0, y0, w, h); c.restore();
       return;
     }
-    for (const op of grp) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
-    for (const op of grp) drawPath(c, op.pts, op.size, op.color, op.alpha);
+    for (const op of grp) if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
+    for (const op of grp) paintBody(c, op);
   }
   function drawGroup(ctx, grp, kind) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -623,7 +708,7 @@
     stroke = {
       kind: 'stroke', layer: state.active, tool: state.tool, color: state.color,
       alpha: state.tool === 'marker' ? state.malpha : state.alpha,
-      size: state.size, ec: state.tool === 'outline' ? edgeColor() : null, osize: state.osize,
+      size: state.size, ec: curOsize() > 0 ? edgeColor() : null, osize: curOsize(),
       pts: [toBoard(e)], pid: e.pointerId, begun: false, sx: e.clientX, sy: e.clientY,
     };
     if (stroke.tool !== 'eraser') paintTemp();
@@ -713,7 +798,7 @@
     cursorEl.style.top = e.clientY + 'px';
   }
   function updateCursorSize() {
-    const d = (state.tool === 'outline' ? state.size + state.osize * 2 : state.size) * vs;
+    const d = (state.size + curOsize() * 2) * vs;
     cursorEl.style.width = d + 'px'; cursorEl.style.height = d + 'px';
   }
 
@@ -724,8 +809,13 @@
     const b = e.target.closest('button'); if (!b) return;
     setTool(b.dataset.tool);
   });
+  // 今の道具のフチ幅(フチを付けられない道具は 0)
+  const curOsize = () => EDGE_TOOLS.includes(state.tool) ? (state.eo[state.tool] || 0) : 0;
   function setTool(t) {
     state.tool = t;
+    panel.classList.toggle('noedge', !EDGE_TOOLS.includes(t));
+    const o = EDGE_TOOLS.includes(t) ? state.eo[t] || 0 : 0;
+    $('osize').value = o; $('osizeVal').textContent = o;
     // マーカーを選んでいる間は「不透明」スライダーがマーカーの濃さ(ペンの不透明度とは別に覚える)
     const a = Math.round((t === 'marker' ? state.malpha : state.alpha) * 100);
     $('alpha').value = a; $('alphaVal').textContent = a;
@@ -747,7 +837,12 @@
     $('alphaVal').textContent = v;
     save();
   });
-  bindRange('osize', 'osizeVal', 'osize', 1);
+  $('osize').addEventListener('input', () => {
+    if (!EDGE_TOOLS.includes(state.tool)) return;
+    state.eo[state.tool] = +$('osize').value;
+    $('osizeVal').textContent = $('osize').value;
+    updateCursorSize(); save();
+  });
   // ---------- colors ----------
   const isHex = c => typeof c === 'string' && /^#[0-9a-f]{6}$/.test(c);
   const hexToRgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
@@ -911,7 +1006,7 @@
 
   // ---------- 画面に出る小パレット(右クリック / 長押し)----------
   const qp = $('qp');
-  const QTOOLS = [['brush', 'ペン'], ['outline', '縁取り'], ['eraser', '消しゴム'], ['neon', 'ネオン'], ['marker', 'マーカー']];
+  const QTOOLS = [['brush', 'ペン'], ['gloss', '艶'], ['marker', 'マーカー'], ['neon', 'ネオン'], ['watercolor', '水彩'], ['eraser', '消しゴム']];
   function openQuickPalette(x, y) {
     qp.textContent = '';
     const tools = document.createElement('div'); tools.className = 'qtools';
@@ -1031,7 +1126,7 @@
         const data = {
           settings: {
             tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
-            oedge: state.oedge, ocolor: state.ocolor, osize: state.osize, active: state.active,
+            oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, active: state.active,
             visible: state.visible, history: state.history, fab: state.fab,
             uiHidden: state.uiHidden, panelOpen: state.panelOpen,
           },
@@ -1047,18 +1142,26 @@
   function soloLayers() {
     try { return (JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}).layers || []; } catch (_) { return []; }
   }
+  const TOOL_IDS = ['brush', 'gloss', 'marker', 'neon', 'watercolor', 'eraser'];
+  // フチ幅(道具ごと)。1.0.x の保存は osize 1 つで、縁取りを選んでいた時だけそのフチ幅をペンに引き継ぐ
+  // (ほかの道具は 0 = フチなし。引き継ぐと今までのペンにいきなりフチが付く)
+  function loadEdgeSizes(s) {
+    const n = v => typeof v === 'number' && v >= 0 && v <= 30 ? Math.round(v) : 0;
+    if (s.eo && typeof s.eo === 'object') return { brush: n(s.eo.brush), gloss: n(s.eo.gloss), marker: n(s.eo.marker) };
+    return { brush: s.tool === 'outline' ? n(s.osize || 4) : 0, gloss: 0, marker: 0 };
+  }
   function load() {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) {}
     if (data && data.settings) {
       const s = data.settings;
       Object.assign(state, {
-        tool: s.tool || 'brush', size: s.size || 8, alpha: s.alpha ?? 1,
+        tool: TOOL_IDS.includes(s.tool) ? s.tool : 'brush', size: s.size || 8, alpha: s.alpha ?? 1, // 1.0.x の縁取りはフチ付きのペンに
         malpha: typeof s.malpha === 'number' && s.malpha >= 0.05 && s.malpha <= 1 ? s.malpha : MARKER_ALPHA,
         color: isHex(s.color) ? s.color : state.color,
         oedge: ['auto', 'white', 'black', 'custom'].includes(s.oedge) ? s.oedge : 'auto',
         ocolor: isHex(s.ocolor) ? s.ocolor : '#ffffff',
-        osize: s.osize || 4,
+        eo: loadEdgeSizes(s),
         active: s.active || 0, visible: s.visible || [true, true, true],
         history: Array.isArray(s.history) ? s.history.filter(isHex).slice(0, 8) : [], fab: s.fab || null,
         uiHidden: !!s.uiHidden, panelOpen: !!s.panelOpen,
@@ -1085,7 +1188,6 @@
   function applySettingsToUi() {
     $('size').value = state.size; $('sizeVal').textContent = state.size;
     $('alpha').value = Math.round(state.alpha * 100); $('alphaVal').textContent = Math.round(state.alpha * 100);
-    $('osize').value = state.osize; $('osizeVal').textContent = state.osize;
     setTool(state.tool); setEdge(state.oedge);
     refreshSwatches(); refreshLayers(); updateButtons();
     ui.classList.toggle('hidden', state.uiHidden);
