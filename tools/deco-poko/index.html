@@ -91,10 +91,23 @@
   #qp .qsw div.on { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* フチを付けられない道具(ネオン・水彩・消しゴム)を選んでいる間はフチの欄を薄くする */
   #panel.noedge .edgeRow { opacity: .35; pointer-events: none; }
+  #panel:not(.eraser) #emodeRow { display: none; }
+  #cursor.obj { border-style: dashed; }
+  #qp .qmode { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; margin: -2px 0 6px; }
+  #qp .qmode button { padding: 4px 0; border-radius: 7px; border: 1px solid var(--panel-edge); background: rgba(255,255,255,.04);
+    color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+  #qp .qmode button.on { background: var(--accent-soft); border-color: var(--accent); }
   .btn:hover, .seg button:hover { background: rgba(255,255,255,.1); }
   .btn:disabled { opacity: .35; cursor: default; }
   input[type=range] { flex: 1; accent-color: var(--accent); margin: 0; }
   .val { width: 30px; text-align: right; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .wellCol { display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .dropper { width: 30px; height: 22px; padding: 0; border-radius: 6px; border: 1px solid var(--panel-edge);
+    background: rgba(255,255,255,.04); color: var(--ink); cursor: pointer; display: grid; place-items: center; }
+  .dropper.on { background: var(--accent-soft); border-color: var(--accent); }
+  body.picking #view { cursor: crosshair; }
+  body.picking #cursor { display: none !important; }
+  #qp .qsw .qdrop { display: grid; place-items: center; color: var(--ink); background: rgba(255,255,255,.08); }
   .well {
     width: 30px; height: 26px; padding: 0; border: 1px solid var(--panel-edge);
     border-radius: 6px; cursor: pointer; flex: none;
@@ -155,6 +168,13 @@
         <button data-tool="eraser">消しゴム</button>
       </div>
     </div>
+    <div class="row" id="emodeRow">
+      <label>消し方</label>
+      <div class="seg" id="emode">
+        <button data-emode="pixel" title="なぞった所だけ消す">ピクセル</button>
+        <button data-emode="object" title="触れた線を 1 本まるごと消す(選んでいるレイヤーの線だけ)">オブジェクト</button>
+      </div>
+    </div>
     <div class="row">
       <label>太さ</label>
       <input type="range" id="size" min="1" max="80" value="8">
@@ -167,7 +187,10 @@
     </div>
     <div class="row">
       <label>色</label>
-      <button class="well" id="colorWell" title="ペンの色を選ぶ"></button>
+      <div class="wellCol">
+        <button class="well" id="colorWell" title="ペンの色を選ぶ"></button>
+        <button class="dropper" id="dropper" title="スポイト(Chrome / Edge では画面のどこでも、それ以外ではボードを触った所の色を拾う)"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M19.4 4.6a2.6 2.6 0 0 0-3.7 0l-2.3 2.3-1-1-1.4 1.4 1 1-7.3 7.3V19h3.4l7.3-7.3 1 1 1.4-1.4-1-1 2.3-2.3a2.6 2.6 0 0 0 .3-3.4zM7.6 17H7v-.6l7-7 .6.6-7 7z"/></svg></button>
+      </div>
       <div class="swatches" id="presets"></div>
     </div>
     <div class="row">
@@ -217,7 +240,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.1.1'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.2.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -250,6 +273,7 @@
     oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
     ocolor: '#ffffff', // oedge が custom のときのフチ色
     eo: { brush: 0, gloss: 0, marker: 0 }, // フチ幅(道具ごと)。0 はフチなし
+    emode: 'pixel', // 消しゴムの消し方: pixel(なぞった所)/ object(触れた線を 1 本まるごと。iOS のオブジェクト消しゴム)
     active: 0,
     visible: [true, true, true],
     history: [],
@@ -326,11 +350,24 @@
   }
 
   // ---------- 操作ログ(戻す / やり直す) ----------
-  // op = 線   {kind: 'stroke', layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize(フチ幅。0 はフチなし), pts: [{x, y}]}
-  //    | 消去 {kind: 'clear', layer: 0..2 | 'all'}
+  // op = 線   {kind: 'stroke', id, layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize(フチ幅。0 はフチなし), pts: [{x, y}]}
+  //    | 消去 {kind: 'clear', id, layer: 0..2 | 'all'}
+  //    | 線ごと消す {kind: 'erase', id, layer, targets: [線の id]}(オブジェクト消しゴム。targets の線を描き直しで飛ばす。戻すと線が戻る)
   // レイヤーの画像 = base + そのレイヤーに関わる op を順に重ねたもの。戻すは最後の op を外して描き直す
   let ops = [], redoOps = [];
+  let nextId = 1; // op の id(保存する。線ごと消すときの目印)
   const affects = (op, i) => op.layer === 'all' || op.layer === i;
+  // 線ごと消された線の id(今ある erase op の targets)
+  function erasedIds() {
+    const s = new Set();
+    for (const op of ops) if (op.kind === 'erase') for (const t of op.targets) s.add(t);
+    return s;
+  }
+  // レイヤー i を描き直すときの op(線ごと消した線と erase op 自体は飛ばす。hide = なぞっている途中で消える予定の線)
+  function layerOps(i, hide) {
+    const gone = erasedIds();
+    return ops.filter(op => affects(op, i) && op.kind !== 'erase' && !gone.has(op.id) && !(hide && hide.has(op.id)));
+  }
   const opLayers = op => op.layer === 'all' ? [...Array(LAYER_COUNT).keys()] : [op.layer];
 
   // 線 1 本を ctx に重ねる。縁取りは scratch で「フチ+線」を組み立ててから重ねる(描いている途中の表示と同じ)
@@ -587,20 +624,26 @@
     flush();
   }
   // レイヤー i を base から描き直す
-  function rebuild(i, list) {
+  function rebuild(i, list, hide) {
     const c = layers[i].getContext('2d');
     c.clearRect(0, 0, W, H); c.drawImage(base[i], 0, 0);
     L[i].grp = B[i].grp.slice(); L[i].kind = B[i].kind;
     if (L[i].grp.length) { const b = L[i].below.getContext('2d'); b.clearRect(0, 0, W, H); b.drawImage(B[i].below, 0, 0); }
-    appendOps(layers[i], L[i], list || ops.filter(op => affects(op, i)));
+    appendOps(layers[i], L[i], list || layerOps(i, hide));
   }
   // 確定した op を記録する(画面にはもう出ている)
   function commit(op) {
+    if (!op.id) op.id = nextId++;
     ops.push(op);
     redoOps = [];
     if (ops.length > OPS_MAX) {
       const old = ops.shift();
-      for (const i of opLayers(old)) appendOps(base[i], B[i], [old]);
+      if (old.kind !== 'erase') {
+        // 線ごと消された線は焼き込まない(消えたまま)。消した erase op からは外す(もう戻せない)
+        let gone = false;
+        for (const e of ops) if (e.kind === 'erase' && e.targets.includes(old.id)) { e.targets = e.targets.filter(t => t !== old.id); gone = true; }
+        if (!gone) for (const i of opLayers(old)) { appendOps(base[i], B[i], [old]); baseUrl[i] = null; }
+      }
     }
     updateButtons(); save();
   }
@@ -615,7 +658,8 @@
     const op = redoOps.pop();
     if (!op) return;
     ops.push(op);
-    for (const i of opLayers(op)) appendOps(layers[i], L[i], [op]);
+    if (op.kind === 'erase') rebuild(op.layer); // 線ごと消すのやり直しは描き直し
+    else for (const i of opLayers(op)) appendOps(layers[i], L[i], [op]);
     updateButtons(); render(); save();
   }
   function updateButtons() {
@@ -702,7 +746,70 @@
   function armPaletteOnly(e) {
     clearTimeout(pressTimer);
     pressOnly = { pid: e.pointerId, sx: e.clientX, sy: e.clientY };
-    pressTimer = setTimeout(() => { const p = pressOnly; pressOnly = null; if (p) openQuickPalette(p.sx, p.sy); }, LONG_PRESS_MS);
+    pressTimer = setTimeout(() => { const p = pressOnly; pressOnly = null; if (p) { cancelObjectErase(); openQuickPalette(p.sx, p.sy); } }, LONG_PRESS_MS);
+  }
+
+  // ---------- オブジェクト消しゴム(触れた線を 1 本まるごと消す。選んでいるレイヤーの線だけ)----------
+  // なぞっている間は当たった線を描き直しで隠し、離したら erase op 1 つとして確定する(戻す 1 回で全部戻る)。
+  // 消せるのは線として残っている op だけ(直近 100 本。それより古い線と 1.1 以前の保存の絵は画像なので消せない)。
+  // 一緒にデコる中は自分の線だけ(collab.erasable が自分の線を返す)
+  let oer = null; // {layer, pid, last, targets: Set, cands}
+  const hitRadius = op => op.size / 2 + (hasEdge(op) ? op.osize : 0);
+  function segDist(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+  function hitsOp(op, p, er) {
+    const r = hitRadius(op) + er;
+    if (!op._bb) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const q of op.pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+      Object.defineProperty(op, '_bb', { value: [x0, y0, x1, y1], enumerable: false });
+    }
+    const [x0, y0, x1, y1] = op._bb;
+    if (p.x < x0 - r || p.x > x1 + r || p.y < y0 - r || p.y > y1 + r) return false;
+    if (op.pts.length === 1) return Math.hypot(p.x - op.pts[0].x, p.y - op.pts[0].y) <= r;
+    for (let k = 1; k < op.pts.length; k++) if (segDist(p, op.pts[k - 1], op.pts[k]) <= r) return true;
+    return false;
+  }
+  // 1 人のとき: レイヤーに見えている線(後ろの消去より後で、線ごと消されていない。消しゴムの線は除く)
+  function localErasable(i) {
+    let vis = [];
+    for (const op of layerOps(i)) {
+      if (op.kind === 'clear') vis = [];
+      else if (op.kind === 'stroke' && op.tool !== 'eraser') vis.push(op);
+    }
+    return vis;
+  }
+  function objectEraseTouch(to) {
+    const er = state.size / 2, from = oer.last;
+    const n = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / Math.max(2, er / 2)));
+    let hit = false;
+    for (let k = 1; k <= n; k++) {
+      const q = { x: from.x + (to.x - from.x) * k / n, y: from.y + (to.y - from.y) * k / n };
+      for (const op of oer.cands) if (!oer.targets.has(op.id) && hitsOp(op, q, er)) { oer.targets.add(op.id); hit = true; }
+    }
+    oer.last = to;
+    if (hit) previewObjectErase();
+  }
+  function previewObjectErase() {
+    if (board.collab) board.collab.previewErase(oer.layer, oer.targets);
+    else rebuild(oer.layer, null, oer.targets);
+    render();
+  }
+  function cancelObjectErase() {
+    if (!oer) return;
+    const { layer } = oer; oer = null;
+    if (board.collab) board.collab.previewErase(layer, new Set()); else rebuild(layer);
+    render();
+  }
+  function finishObjectErase() {
+    const { layer, targets } = oer; oer = null;
+    if (!targets.size) return;
+    if (board.collab) { board.collab.erase(layer, [...targets]); return; }
+    commit({ kind: 'erase', layer, targets: [...targets] });
+    rebuild(layer); render();
   }
   function disarmPaletteOnly(e, moved) {
     if (!pressOnly || e.pointerId !== pressOnly.pid) return;
@@ -713,10 +820,20 @@
   view.addEventListener('pointerup', e => disarmPaletteOnly(e, false));
   view.addEventListener('pointercancel', e => disarmPaletteOnly(e, false));
   view.addEventListener('pointerdown', e => {
+    if (picking) { e.preventDefault(); pickFromBoard(e); return; } // スポイト(ボードから拾う)
     if (e.button !== 0) return;
     if (stroke) return;
     if (!state.visible[state.active] || (board.collab && !board.collab.canDraw())) {
       if (e.pointerType !== 'mouse') armPaletteOnly(e);
+      return;
+    }
+    if (state.tool === 'eraser' && state.emode === 'object') {
+      view.setPointerCapture(e.pointerId);
+      const p = toBoard(e);
+      oer = { layer: state.active, pid: e.pointerId, last: p, targets: new Set(),
+              cands: board.collab ? board.collab.erasable(state.active) : localErasable(state.active) };
+      objectEraseTouch(p);
+      if (e.pointerType !== 'mouse') armPaletteOnly(e); // 指は長押しで小パレット(動かせば消しゴムのまま)
       return;
     }
     view.setPointerCapture(e.pointerId);
@@ -736,6 +853,14 @@
     render();
   });
   view.addEventListener('pointermove', e => {
+    if (oer) {
+      if (e.pointerId !== oer.pid) return;
+      moveCursor(e);
+      let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      if (!evs.length) evs = [e];
+      for (const ev of evs) objectEraseTouch(toBoard(ev));
+      return;
+    }
     if (stroke && e.pointerId !== stroke.pid) return;
     moveCursor(e);
     if (!stroke) return;
@@ -765,6 +890,11 @@
     if (board.collab && stroke.pts.length >= board.collab.maxPoints()) endStroke();
   });
   const endStroke = e => {
+    if (oer) {
+      if (e && e.pointerId !== oer.pid) return;
+      clearTimeout(pressTimer);
+      return e && e.type === 'pointercancel' ? cancelObjectErase() : finishObjectErase();
+    }
     if (!stroke || (e && e.pointerId !== stroke.pid)) return;
     clearTimeout(pressTimer);
     if (e && e.type === 'pointercancel' && !stroke.begun) return abortStroke(); // 動かす前に取り消された(2 本指の操作など)
@@ -829,6 +959,8 @@
   function setTool(t) {
     state.tool = t;
     panel.classList.toggle('noedge', !EDGE_TOOLS.includes(t));
+    panel.classList.toggle('eraser', t === 'eraser');
+    cursorEl.classList.toggle('obj', t === 'eraser' && state.emode === 'object');
     const o = EDGE_TOOLS.includes(t) ? state.eo[t] || 0 : 0;
     $('osize').value = o; $('osizeVal').textContent = o;
     // マーカーを選んでいる間は「不透明」スライダーがマーカーの濃さ(ペンの不透明度とは別に覚える)
@@ -836,6 +968,14 @@
     $('alpha').value = a; $('alphaVal').textContent = a;
     for (const b of toolsEl.children) b.classList.toggle('on', b.dataset.tool === t);
     updateCursorSize(); save();
+  }
+  const emodeEl = $('emode');
+  emodeEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) setEmode(b.dataset.emode); });
+  function setEmode(m) {
+    state.emode = m === 'object' ? 'object' : 'pixel';
+    for (const b of emodeEl.children) b.classList.toggle('on', b.dataset.emode === state.emode);
+    cursorEl.classList.toggle('obj', state.tool === 'eraser' && state.emode === 'object');
+    save();
   }
   const bindRange = (id, valId, key, scale) => {
     const el = $(id);
@@ -1019,6 +1159,38 @@
   });
   $('colorWell').addEventListener('click', () => openPicker('color'));
 
+  // ---------- スポイト ----------
+  // Chrome / Edge は EyeDropper で画面のどこでも拾える(ほかのウィンドウや配信プレビューの上も)。
+  // 使えない所(OBS の対話ウィンドウ・Firefox・Safari)では、ボードを 1 回触った所の色を拾う(描いた絵の色だけ)。
+  // OBS の配信画面から拾うのは別の段(docs/architecture/deco-poko-obs-vts.md 段階 b)
+  let picking = false;
+  async function startDropper() {
+    if (picking) return setPicking(false);
+    if (window.EyeDropper && typeof window.obsstudio === 'undefined') {
+      try {
+        const r = await new window.EyeDropper().open();
+        const c = String(r && r.sRGBHex || '').toLowerCase();
+        if (isHex(c)) { setColor(c); syncPicker(); }
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // Esc で取り消した
+      }
+    }
+    setPicking(true);
+  }
+  function setPicking(on) {
+    picking = on;
+    document.body.classList.toggle('picking', on);
+    $('dropper').classList.toggle('on', on);
+  }
+  function pickFromBoard(e) {
+    setPicking(false);
+    const d = vctx.getImageData(Math.round(e.clientX), Math.round(e.clientY), 1, 1).data; // 表示の canvas はウィンドウの px
+    if (d[3] === 0) return; // 何も描いていない所
+    setColor(rgbToHex([d[0], d[1], d[2]])); syncPicker();
+  }
+  $('dropper').addEventListener('click', startDropper);
+
   // ---------- 画面に出る小パレット(右クリック / 長押し)----------
   const qp = $('qp');
   const QTOOLS = [['brush', 'ペン'], ['gloss', '艶'], ['marker', 'マーカー'], ['neon', 'ネオン'], ['watercolor', '水彩'], ['eraser', '消しゴム']];
@@ -1028,17 +1200,30 @@
     for (const [t, label] of QTOOLS) {
       const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
       b.classList.toggle('on', state.tool === t);
-      b.addEventListener('click', () => { setTool(t); for (const x of tools.children) x.classList.toggle('on', x === b); });
+      // 消しゴムを選んだ / 外したら、消し方の行を出し入れするため開き直す
+      b.addEventListener('click', () => { const re = (t === 'eraser') !== (state.tool === 'eraser'); setTool(t); if (re) openQuickPalette(x, y); else for (const z of tools.children) z.classList.toggle('on', z === b); });
       tools.appendChild(b);
     }
+    const modes = document.createElement('div'); modes.className = 'qmode';
+    if (state.tool === 'eraser') {
+      for (const [m, label] of [['pixel', 'ピクセル'], ['object', 'オブジェクト']]) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+        b.classList.toggle('on', state.emode === m);
+        b.addEventListener('click', () => { setEmode(m); for (const z of modes.children) z.classList.toggle('on', z === b); });
+        modes.appendChild(b);
+      }
+    }
     const sw = document.createElement('div'); sw.className = 'qsw';
-    for (const c of [...PRESETS, ...state.history.filter(h => !PRESETS.includes(h))].slice(0, 16)) {
+    for (const c of [...PRESETS, ...state.history.filter(h => !PRESETS.includes(h))].slice(0, 15)) { // 16 個目はスポイト
       const d = document.createElement('div'); d.style.background = c; d.title = c;
       d.classList.toggle('on', c === state.color);
       d.addEventListener('click', () => { setColor(c); syncPicker(); closeQuickPalette(); });
       sw.appendChild(d);
     }
-    qp.append(tools, sw);
+    const dp = document.createElement('div'); dp.className = 'qdrop'; dp.title = 'スポイト'; dp.innerHTML = $('dropper').innerHTML;
+    dp.addEventListener('click', () => { closeQuickPalette(); startDropper(); });
+    sw.appendChild(dp);
+    qp.append(tools, modes, sw);
     qp.hidden = false;
     const w = qp.offsetWidth, h = qp.offsetHeight;
     const left = Math.max(4, Math.min(window.innerWidth - w - 4, x - w / 2));
@@ -1129,33 +1314,62 @@
   // Ctrl+Z も付けない: OBS の対話では OBS 本体の「元に戻す」に吸われ、シーン編集まで戻ってしまう(2026-10-15 ぽこ確認)
   window.addEventListener('keydown', e => {
     if (e.key === 'Tab') { e.preventDefault(); setUiHidden(!state.uiHidden); }
-    if (e.key === 'Escape') closeQuickPalette();
+    if (e.key === 'Escape') { closeQuickPalette(); if (picking) setPicking(false); }
   });
 
   // ---------- persistence ----------
+  // 保存: 設定 + レイヤーの画像(1.1 までの版でも開ける形)+ 線の記録(1.2.0 から)。
+  // 線の記録 = base(戻せない部分の画像)+ ops(直近 100 個)。読み込むと base + ops で描き直すので、
+  // 再読み込みしても直近 100 本は線ごと消せる。容量が足りないときは画像だけで保存し直す
   let saveTimer = 0;
+  const baseUrl = Array(LAYER_COUNT).fill(null); // 保存用の base 画像(焼き込みが起きた時だけ作り直す)
+  const r1s = v => Math.round(v * 10) / 10;
+  function packOp(op) {
+    const o = { kind: op.kind, id: op.id, layer: op.layer };
+    if (op.kind === 'stroke') Object.assign(o, { tool: op.tool, color: op.color, alpha: op.alpha, size: op.size, ec: op.ec, osize: op.osize,
+      pts: op.pts.flatMap(p => [r1s(p.x), r1s(p.y)]) });
+    if (op.kind === 'erase') o.targets = op.targets.slice();
+    return o;
+  }
+  function unpackOp(o) {
+    if (!o || typeof o !== 'object' || !Number.isInteger(o.id)) return null;
+    const lay = v => Number.isInteger(v) && v >= 0 && v < LAYER_COUNT;
+    if (o.kind === 'clear') return lay(o.layer) || o.layer === 'all' ? { kind: 'clear', id: o.id, layer: o.layer } : null;
+    if (o.kind === 'erase') return lay(o.layer) && Array.isArray(o.targets) ? { kind: 'erase', id: o.id, layer: o.layer, targets: o.targets.filter(Number.isInteger) } : null;
+    if (o.kind !== 'stroke' || !lay(o.layer) || !(TOOL_IDS.includes(o.tool) || o.tool === 'outline') || !isHex(o.color)) return null;
+    if (!Array.isArray(o.pts) || o.pts.length < 2 || o.pts.length % 2) return null;
+    const pts = [];
+    for (let k = 0; k < o.pts.length; k += 2) pts.push({ x: +o.pts[k] || 0, y: +o.pts[k + 1] || 0 });
+    const num = (v, d) => typeof v === 'number' && isFinite(v) ? v : d;
+    return { kind: 'stroke', id: o.id, layer: o.layer, tool: o.tool, color: o.color, alpha: num(o.alpha, 1), size: num(o.size, 8),
+      ec: isHex(o.ec) ? o.ec : null, osize: num(o.osize, 0), pts };
+  }
+  function readSaved() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) { return null; }
+  }
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
+      const settings = {
+        tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
+        oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, emode: state.emode, active: state.active,
+        visible: state.visible, history: state.history, fab: state.fab,
+        uiHidden: state.uiHidden, panelOpen: state.panelOpen,
+      };
+      // 一緒にデコる中の絵は保存しない(1 人で描いていた絵と線の記録をそのまま残す)
+      if (board.collab) {
+        try { localStorage.setItem(LS_KEY, JSON.stringify({ ...(readSaved() || {}), settings })); } catch (err) { console.warn('save failed', err); }
+        return;
+      }
+      const imgs = layers.map(c => ({ img: c.toDataURL() }));
       try {
-        const data = {
-          settings: {
-            tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
-            oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, active: state.active,
-            visible: state.visible, history: state.history, fab: state.fab,
-            uiHidden: state.uiHidden, panelOpen: state.panelOpen,
-          },
-          // 一緒にデコる中の絵は保存しない(1 人で描いていた絵をそのまま残す)
-          layers: board.collab ? soloLayers() : layers.map(L => ({ img: L.toDataURL() })),
-        };
-        localStorage.setItem(LS_KEY, JSON.stringify(data));
+        localStorage.setItem(LS_KEY, JSON.stringify({ settings, layers: imgs,
+          base: base.map((c, i) => baseUrl[i] || (baseUrl[i] = c.toDataURL())), ops: ops.map(packOp), nextId }));
       } catch (err) {
-        console.warn('save failed', err);
+        console.warn('save failed (線の記録なしで保存し直します)', err);
+        try { localStorage.setItem(LS_KEY, JSON.stringify({ settings, layers: imgs })); } catch (err2) { console.warn('save failed', err2); }
       }
     }, 300);
-  }
-  function soloLayers() {
-    try { return (JSON.parse(localStorage.getItem(LS_KEY) || 'null') || {}).layers || []; } catch (_) { return []; }
   }
   const TOOL_IDS = ['brush', 'gloss', 'marker', 'neon', 'watercolor', 'eraser'];
   // フチ幅(道具ごと)。1.0.x の保存は osize 1 つで、縁取りを選んでいた時だけそのフチ幅をペンに引き継ぐ
@@ -1180,9 +1394,20 @@
         active: s.active || 0, visible: s.visible || [true, true, true],
         history: Array.isArray(s.history) ? s.history.filter(isHex).slice(0, 8) : [], fab: s.fab || null,
         uiHidden: !!s.uiHidden, panelOpen: !!s.panelOpen,
+        emode: s.emode === 'object' ? 'object' : 'pixel',
       });
     }
     const promises = [];
+    // 1.2.0 からの保存: base の画像 + 線の記録で描き直す(線ごと消せる)
+    const withOps = !!(data && Array.isArray(data.ops) && Array.isArray(data.base));
+    if (withOps) {
+      data.base.forEach((u, i) => { if (i < LAYER_COUNT && typeof u === 'string') promises.push(loadInto(base[i], u)); });
+      return Promise.all(promises).then(() => {
+        ops = data.ops.map(unpackOp).filter(Boolean).slice(-OPS_MAX);
+        nextId = Math.max(Number.isInteger(data.nextId) ? data.nextId : 1, ...ops.map(op => op.id + 1));
+        for (let i = 0; i < LAYER_COUNT; i++) { baseUrl[i] = typeof data.base[i] === 'string' ? data.base[i] : null; rebuild(i); }
+      });
+    }
     if (data && data.layers) {
       data.layers.forEach((L, i) => {
         if (i >= LAYER_COUNT) return;
@@ -1203,7 +1428,7 @@
   function applySettingsToUi() {
     $('size').value = state.size; $('sizeVal').textContent = state.size;
     $('alpha').value = Math.round(state.alpha * 100); $('alphaVal').textContent = Math.round(state.alpha * 100);
-    setTool(state.tool); setEdge(state.oedge);
+    setTool(state.tool); setEdge(state.oedge); setEmode(state.emode);
     refreshSwatches(); refreshLayers(); updateButtons();
     ui.classList.toggle('hidden', state.uiHidden);
     placeFab(state.fab ? state.fab.x : VW - 70, state.fab ? state.fab.y : VH - 70);
@@ -1212,7 +1437,8 @@
 
   // ---------- 一緒にデコる(collab.js。今はプラス版の Web 版だけ)から使う口。1 人で描くときは board.collab が null ----------
   const board = {
-    collab: null, // 一緒にデコる中は collab.js のオブジェクト(begin / points / end / clear / undo / redo / renderLayer / canDraw / maxPoints)
+    collab: null, // 一緒にデコる中は collab.js のオブジェクト(begin / points / end / clear / undo / redo / renderLayer / canDraw / maxPoints
+                  //   / erasable(線ごと消せる自分の線)/ previewErase(なぞっている途中の線を隠す)/ erase(線ごと消すを送る))
     LAYER_COUNT, state, layers, panel,
     get W() { return W; }, get H() { return H; }, get stroke() { return stroke; },
     applyOp, paintStrokeTo, drawPath, render, makeCanvas, updateButtons, save,
@@ -1222,7 +1448,7 @@
       for (let i = 0; i < LAYER_COUNT; i++) {
         layers[i].getContext('2d').clearRect(0, 0, W, H);
         base[i].getContext('2d').clearRect(0, 0, W, H);
-        L[i].grp = []; B[i].grp = [];
+        L[i].grp = []; B[i].grp = []; baseUrl[i] = null;
       }
       ops = []; redoOps = []; updateButtons(); render();
     },
