@@ -217,7 +217,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.1.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.1.1'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -363,7 +363,9 @@
     if (!op || op.kind === 'clear' || op.kind === 'break') return null;
     if (op.tool === 'neon') return 'neon';
     if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
-    if (hasEdge(op)) return 'outline'; // フチ付きのペン・艶は、続く間フチをまとめる
+    // 艶はフチの有無にかかわらず続く間まとめる(線を全部 → 影を全部 → ツヤを全部。重なりがフチ付きのペンと同じく 1 本になじむ)
+    if (op.tool === 'gloss') return 'gloss@' + Math.round((op.alpha ?? 1) * 100);
+    if (hasEdge(op)) return 'outline'; // フチ付きのペンは、続く間フチをまとめる
     return null;
   };
   const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
@@ -388,20 +390,32 @@
     const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
     return w > 0 && h > 0 ? { x0, y0, w, h } : null;
   }
-  // 艶ペン: 線の上側に白いツヤ、下側に少し濃い影を、線の形の中だけに重ねる(光は左上から)
-  function paintGloss(c, op) {
-    const b = boxOf([op], op.size / 2 + 2); if (!b) return;
+  // 艶ペン: 線の上側に白いツヤ、下側に少し濃い影を、線の形の中だけに重ねる(光は左上から)。
+  // 続けて描いた艶はまとめて フチを全部 → 線を全部 → 影を全部 → ツヤを全部 の順に描く。線ごとに重ねると、
+  // 交わる所であとの線の影が先の線のツヤを消し、フチ付きのペンのようになじまない(2026-10-24 ぶらんち)
+  function paintGlossGroup(c, grp) {
+    const b = boxOf(grp, Math.max(...grp.map(op => op.size / 2 + (hasEdge(op) ? op.osize : 0))) + 2); if (!b) return;
+    for (const op of grp) if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     const g = gk.getContext('2d');
     g.clearRect(b.x0, b.y0, b.w, b.h);
-    drawPath(g, op.pts, op.size, op.color, 1);
-    const off = (dx, dy) => op.pts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-    const s = op.size;
-    // source-atop = 線の形の中だけに重ねる(線の端の丸い所からはみ出さない)
-    drawPath(g, off(s * 0.14, s * 0.2), s * 0.55, mixTo(op.color, 0, 0.3), 0.55, 'source-atop'); // 下側の影
-    g.save(); g.filter = 'blur(' + Math.max(0.5, s * 0.05).toFixed(2) + 'px)';
-    drawPath(g, off(-s * 0.12, -s * 0.17), Math.max(1, s * 0.26), '#ffffff', 0.85, 'source-atop'); // ツヤ
-    g.restore();
-    c.save(); c.globalAlpha = op.alpha; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
+    for (const op of grp) drawPath(g, op.pts, op.size, op.color, 1);
+    const off = (op, dx, dy) => op.pts.map(p => ({ x: p.x + dx * op.size, y: p.y + dy * op.size }));
+    // 影とツヤは、それぞれ全部を不透明で wk に描いてから 1 回だけ重ねる(交わる所で影が二重に濃くならない)。
+    // source-atop = 線の形(まとまり全体)の中だけに重ねる(線の端の丸い所からはみ出さない)
+    const w = wk.getContext('2d');
+    const layer = (alpha, paint) => {
+      w.clearRect(b.x0, b.y0, b.w, b.h);
+      for (const op of grp) paint(op);
+      g.save(); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = alpha;
+      g.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); g.restore();
+    };
+    layer(0.55, op => drawPath(w, off(op, 0.14, 0.2), op.size * 0.55, mixTo(op.color, 0, 0.3), 1)); // 下側の影
+    layer(0.85, op => {
+      w.save(); w.filter = 'blur(' + Math.max(0.5, op.size * 0.05).toFixed(2) + 'px)';
+      drawPath(w, off(op, -0.12, -0.17), Math.max(1, op.size * 0.26), '#ffffff', 1); // ツヤ
+      w.restore();
+    });
+    c.save(); c.globalAlpha = grp[0].alpha ?? 1; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
   }
   // 水彩: ふちがにじんだ薄い色に、ふちに溜まった濃い色と紙の目を足す。線 1 本の中の重なりは濃くならず、
   // 別の線と重なると濃くなる(重ね塗り)。紙の目は画面に固定した模様なので、描き直しても同じ画素になる
@@ -439,7 +453,6 @@
   }
   // 線の本体(フチは含まない)
   function paintBody(c, op) {
-    if (op.tool === 'gloss') return paintGloss(c, op);
     drawPath(c, op.pts, op.size, op.color, op.alpha);
   }
   // マーカーのペン先: 平たい(チゼル型)ペン先を斜め 75° に固定して、なぞった跡を塗る。
@@ -497,12 +510,14 @@
     if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
     if (op.tool === 'neon') return paintNeonGroup(c, [op]);
     if (op.tool === 'watercolor') return paintWatercolor(c, op);
+    if (op.tool === 'gloss') return paintGlossGroup(c, [op]);
     if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     paintBody(c, op);
   }
   // まとまりを描く。縁取り: フチを全部 → 線を全部。マーカー: 不透明で全部描いてから 40% で 1 回だけ重ねる
   function paintGroupTo(c, grp, kind) {
     if (kind === 'neon') return paintNeonGroup(c, grp);
+    if (typeof kind === 'string' && kind.startsWith('gloss')) return paintGlossGroup(c, grp);
     if (isMarkerKind(kind)) {
       // 線の周りだけを作業用に使う(スマホで長いマーカーを描いても毎回全面を塗り直さない)
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -761,7 +776,7 @@
       // 確定はサーバーの返事で行う。それまでは途中の表示を「確定待ち」として出しておく
       // 確定待ちの表示はその線 1 本だけ(マーカー・ネオンのまとまり全体を渡すと、レイヤーの上に二重に重なって濃く見える)
       let pend = temp;
-      if (isMarkerKind(groupKind(op)) || groupKind(op) === 'neon') {
+      if (isMarkerKind(groupKind(op)) || groupKind(op) === 'neon' || op.tool === 'gloss') {
         const c = temp.getContext('2d');
         c.clearRect(0, 0, W, H);
         paintStrokeTo(c, op);
