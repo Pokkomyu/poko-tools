@@ -675,3 +675,14 @@ pokonya は線を通さないので、守るのは「部屋の数」「接続の
 11. **どの Cloudflare アカウントで作るか** — 推奨: ぶらんちのアカウント(hoshino-poko.com の DNS は Cloudflare ではないので、DNS とは無関係に作れる)。請求先を誰にするかはぽこと相談
 12. **合言葉の承認** — 推奨: 承認待ちのゲストに 4 桁の合言葉を出し、ホストの一覧に同じ数字を並べる(名前欄は作らない)
 13. **Cloudflare の規約(確認点 6)** — **決定: FAQ が映像以外の使い方(ロボットの遠隔操作など)も合う使い方に挙げているのを根拠に、問い合わせずに進める**。以下は検討時のメモ: 許される使い方の文言は「video call の機能」で、お絵かきのデータだけの中継はグレー。推奨: 段階 0 の前に Cloudflare に問い合わせる(Discord の Cloudflare Developers やサポート)か、文言どおりでなくても FAQ の「映像以外の使い方」を根拠に進めるかを、ぶらんちが決める。だめなら自前の TURN(coturn を cnh-vps 以外に)か、プラス版と同じ WS 中継に戻る
+
+## 13. オブジェクト消しゴム(自分の線を線ごと消す)— 2026-10-24 ぶらんち決定
+
+デコポコ 1.2.0 でオブジェクト消しゴム(触れた線を 1 本まるごと消す)を入れた(要件は `docs/requirements/deco-poko.md`)。一緒にデコる中は **自分の線だけ** 消せる(ぶらんち)。
+
+- プロトコル(v1 / v2 共通): クライアント → サーバー `{"t": "erase", "layer": 0..2, "targets": [線の id, …]}`。サーバーは targets のうち **送り主の席の stroke・同じレイヤー・取り消していない** ものだけを残し、1 つも残らなければ何もしない(返事なし)。残れば op `{"id", "seq", "seat", "kind": "erase", "layer", "targets"}` を作って `{"t": "op", "op": …}` で全員に流す。`welcome` の ops にも入る
+- 検証: `layer` は 0..2(`all` は不可)、`targets` は 1〜500 個の配列(数でない要素は外す)。違えば `bad_message`。容量は消去と同じく `CLEAR_HEADROOM` まで許す
+- 戻す / やり直す: erase op はその席の op なので、今の `undo` / `redo` のまま(取り消すと線が戻る)。後ろの消去に覆われた erase op は戻す対象にならない(§5 と同じ)
+- 描き直し(collab.js): 取り消していない erase op の targets と erase op 自体を飛ばして描く(まとまりは区切らない)。なぞっている途中は、当たった自分の線を隠して描き直す。送ってから op が返るまでも隠し、10 秒返事が無ければ戻す(古いサーバーで `bad_message` になったときも同じ)
+- 古いクライアント(1.1.x 以前)は erase op を知らないので、部屋で誰かが線ごと消すと描き直しで止まる。本番はサーバー → プラス版の順に出し、読み込み直してもらう
+- 変更: pokonya `members/deco/room.py`(`_erase`、`Op.kind` に erase、`MAX_ERASE_TARGETS`)、poko-tools `tools/deco-poko/collab.js`(`erasable` / `previewErase` / `erase`、`rebuild` で erase を飛ばす)。無料版の WebRTC 方式(§12)でも同じ op の形を使う
