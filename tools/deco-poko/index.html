@@ -161,10 +161,10 @@
       <label>ツール</label>
       <div class="seg" id="tools">
         <button data-tool="brush" title="ふつうの線。フチ幅を上げるとフチが付く">ペン</button>
-        <button data-tool="gloss" title="ツヤのある線。フチ幅を上げるとフチが付く">艶</button>
+        <button data-tool="gloss" title="ぷっくりした線に、ところどころツヤ。フチ幅を上げるとフチが付く">艶</button>
         <button data-tool="marker" title="半透明。続けて描いても重なりが濃くならない。フチ幅を上げるとフチが付く">マーカー</button>
         <button data-tool="neon" title="線の色で光るペン">ネオン</button>
-        <button data-tool="watercolor" title="にじんだ水彩。重ねると濃くなる">水彩</button>
+        <button data-tool="watercolor" title="筆で塗った水彩。重ねると濃くなる。フチ幅は選ぶたびに 0 に戻る">水彩</button>
         <button data-tool="eraser">消しゴム</button>
       </div>
     </div>
@@ -240,7 +240,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.2.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.3.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -272,7 +272,7 @@
     color: '#ff7fb3',
     oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
     ocolor: '#ffffff', // oedge が custom のときのフチ色
-    eo: { brush: 0, gloss: 0, marker: 0 }, // フチ幅(道具ごと)。0 はフチなし
+    eo: { brush: 0, gloss: 0, marker: 0, watercolor: 0 }, // フチ幅(道具ごと)。0 はフチなし
     emode: 'pixel', // 消しゴムの消し方: pixel(なぞった所)/ object(触れた線を 1 本まるごと。iOS のオブジェクト消しゴム)
     active: 0,
     visible: [true, true, true],
@@ -304,7 +304,7 @@
   let temp = null;    // 描いている途中の線(確定時にそのままレイヤーへ重ねる)
   let scratch = null; // 描き直しで線 1 本を組み立てる作業用
   let mk = null;      // マーカーのまとまりを不透明で描いてから 40% で重ねる作業用
-  let gk = null, wk = null; // 艶・水彩・フチ付きマーカーを 1 本ずつ組み立てる作業用
+  let gk = null, wk = null, hk = null; // 艶・水彩・フチ付きマーカーを組み立てる作業用(hk は艶のぼかした形)
 
   function resize(force) {
     VW = window.innerWidth; VH = window.innerHeight;
@@ -325,7 +325,7 @@
       layers[i] = grow(layers[i]); base[i] = grow(base[i]);
       L[i].below = grow(L[i].below); B[i].below = grow(B[i].below);
     }
-    temp = grow(null); scratch = grow(null); mk = grow(null); gk = grow(null); wk = grow(null);
+    temp = grow(null); scratch = grow(null); mk = grow(null); gk = grow(null); wk = grow(null); hk = grow(null);
     render();
   }
 
@@ -389,7 +389,7 @@
   // 線の種類: brush / gloss(艶)/ marker(半透明、重ねても濃くならない)/ neon(光る)/ watercolor(水彩)/ eraser
   //   brush・gloss・marker は osize > 0 でフチが付く(1.1.0 で「縁取り」ペンをこれに統合。2026-10-24 ぽこ)。
   //   outline は 1.0.x までの縁取り(= フチ付きの brush)。古い版の相手から届いたときのために描ける形で残す
-  const EDGE_TOOLS = ['brush', 'gloss', 'marker'];
+  const EDGE_TOOLS = ['brush', 'gloss', 'marker', 'watercolor']; // 水彩は 1.3.0 から(選ぶたびにフチ幅 0 に戻す)
   const hasEdge = op => op.tool === 'outline' || (EDGE_TOOLS.includes(op.tool) && op.osize > 0);
   const wcBlur = op => Math.max(1, op.size * 0.08);
   const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
@@ -399,16 +399,21 @@
   const groupKind = op => {
     if (!op || op.kind === 'clear' || op.kind === 'break') return null;
     if (op.tool === 'neon') return 'neon';
-    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
+    if (op.tool === 'watercolor') return null; // 水彩は線ごと(フチ付きでもまとめない)
+    // ペン・艶・マーカーのまとまりは、色・フチ色・フチ幅が同じ間だけ(1.2.1。色を変えて上に重ねた線は、フチごと上に乗る。
+    // 同じ色で続けて書いた文字は今まで通りフチがまとまり、あとの線のフチで先の線が切れない。2026-10-24 ぶらんち報告)
+    const look = op.color + '|' + (hasEdge(op) ? op.ec + '|' + op.osize : '-');
+    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100) + '|' + look;
     // 艶はフチの有無にかかわらず続く間まとめる(線を全部 → 影を全部 → ツヤを全部。重なりがフチ付きのペンと同じく 1 本になじむ)
-    if (op.tool === 'gloss') return 'gloss@' + Math.round((op.alpha ?? 1) * 100);
-    if (hasEdge(op)) return 'outline'; // フチ付きのペンは、続く間フチをまとめる
+    if (op.tool === 'gloss') return 'gloss@' + Math.round((op.alpha ?? 1) * 100) + '|' + look;
+    if (hasEdge(op)) return 'outline|' + look; // フチ付きのペンは、続く間フチをまとめる
     return null;
   };
   const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
   function strokeRadius(op) {
     if (op.tool === 'neon') return op.size / 2 + neonBlur(op) * 1.5 + 2;
-    if (op.tool === 'watercolor') return op.size / 2 + wcBlur(op) * 3 + 2;
+    if (op.tool === 'watercolor') return op.size / 2 + wcBlur(op) * 3 + 2 + (hasEdge(op) ? op.osize : 0);
+    if (op.tool === 'gloss') return op.size / 2 + (hasEdge(op) ? op.osize : 0) + op.size * 0.6 + 4; // 外のうっすら影の分
     if (hasEdge(op)) return (op.size + op.osize * 2) / 2 + 2;
     return op.size / 2 + 2;
   }
@@ -427,35 +432,105 @@
     const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
     return w > 0 && h > 0 ? { x0, y0, w, h } : null;
   }
-  // 艶ペン: 線の上側に白いツヤ、下側に少し濃い影を、線の形の中だけに重ねる(光は左上から)。
-  // 続けて描いた艶はまとめて フチを全部 → 線を全部 → 影を全部 → ツヤを全部 の順に描く。線ごとに重ねると、
-  // 交わる所であとの線の影が先の線のツヤを消し、フチ付きのペンのようになじまない(2026-10-24 ぶらんち)
-  function paintGlossGroup(c, grp) {
-    const b = boxOf(grp, Math.max(...grp.map(op => op.size / 2 + (hasEdge(op) ? op.osize : 0))) + 2); if (!b) return;
-    for (const op of grp) if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
-    const g = gk.getContext('2d');
-    g.clearRect(b.x0, b.y0, b.w, b.h);
-    for (const op of grp) drawPath(g, op.pts, op.size, op.color, 1);
-    const off = (op, dx, dy) => op.pts.map(p => ({ x: p.x + dx * op.size, y: p.y + dy * op.size }));
-    // 影とツヤは、それぞれ全部を不透明で wk に描いてから 1 回だけ重ねる(交わる所で影が二重に濃くならない)。
-    // source-atop = 線の形(まとまり全体)の中だけに重ねる(線の端の丸い所からはみ出さない)
-    const w = wk.getContext('2d');
-    const layer = (alpha, paint) => {
-      w.clearRect(b.x0, b.y0, b.w, b.h);
-      for (const op of grp) paint(op);
-      g.save(); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = alpha;
-      g.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); g.restore();
-    };
-    layer(0.55, op => drawPath(w, off(op, 0.14, 0.2), op.size * 0.55, mixTo(op.color, 0, 0.3), 1)); // 下側の影
-    layer(0.85, op => {
-      w.save(); w.filter = 'blur(' + Math.max(0.5, op.size * 0.05).toFixed(2) + 'px)';
-      drawPath(w, off(op, -0.12, -0.17), Math.max(1, op.size * 0.26), '#ffffff', 1); // ツヤ
-      w.restore();
-    });
-    c.save(); c.globalAlpha = grp[0].alpha ?? 1; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
+  // 艶ペン(1.3.0、2026-10-24 ぶらんちの見本: ケチャップのような、ぷっくりした線にところどころツヤ)。
+  // 続けて描いた艶(色・フチが同じ間)は 1 つの形として扱い、重なった所も「そういう形のもの」として影とツヤを計算し直す:
+  //   形 M = 線を全部不透明で塗ったもの / B = M をぼかしたもの(ふくらみ)
+  //   影   = 右下の縁: B を右下へずらしたもの から 左上へずらしたもの を抜いた部分(光は左上から)
+  //   ツヤ = 左上の縁の近くの細い帯を、固定のまだら模様で切り抜いたもの(ところどころにだけ出る)
+  // 線ごとの乱数(書き始めの位置と太さから決める。描いている途中・確定後・描き直しで同じになる)
+  function opRandom(op, salt) {
+    const p0 = op.pts[0];
+    let seed = (Math.round(p0.x * 10) * 73856093 ^ Math.round(p0.y * 10) * 19349663 ^ Math.round(op.size * 10) * 83492791 ^ salt) >>> 0;
+    return () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
   }
-  // 水彩: ふちがにじんだ薄い色に、ふちに溜まった濃い色と紙の目を足す。線 1 本の中の重なりは濃くならず、
-  // 別の線と重なると濃くなる(重ね塗り)。紙の目は画面に固定した模様なので、描き直しても同じ画素になる
+  // 線に沿って、ところどころに短いツヤの筋を引く(長さと間隔は線ごとの乱数)
+  function glossDashes(ctx, op) {
+    const rnd = opRandom(op, 7), s = op.size, pts = op.pts;
+    const ox = -s * 0.1, oy = -s * 0.14; // 光の方(左上)へ寄せる
+    if (pts.length === 1) { drawPath(ctx, [{ x: pts[0].x + ox, y: pts[0].y + oy }], s * 0.22, '#fff', 1); return; }
+    let on = rnd() < 0.5, left = s * (on ? 0.5 + rnd() * 1.6 : 0.4 + rnd() * 2.5), cur = [];
+    // 筋は真ん中が太く両端が細い(3 段に重ねる)。ときどき小さな点も付ける
+    const flush = () => {
+      if (cur.length > 1) {
+        const wmax = Math.max(1.5, s * (0.1 + rnd() * 0.16)), m = cur.length;
+        for (const [f, k] of [[0.45, 0], [0.75, 0.15], [1, 0.3]]) {
+          const a = Math.floor(m * k), z = Math.ceil(m * (1 - k));
+          if (z - a >= 2) drawPath(ctx, cur.slice(a, z), wmax * f, '#fff', 1);
+        }
+        if (rnd() < 0.35) {
+          const q = cur[m - 1];
+          drawPath(ctx, [{ x: q.x + s * (0.15 + rnd() * 0.25), y: q.y + s * 0.03 }], Math.max(1.5, s * 0.1), '#fff', 1);
+        }
+      }
+      cur = [];
+    };
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      let seg = Math.hypot(b.x - a.x, b.y - a.y), t = 0;
+      while (seg > 0) {
+        const step = Math.min(seg, left);
+        const t1 = t + step / Math.hypot(b.x - a.x, b.y - a.y || 1e-9);
+        if (on) { if (!cur.length) cur.push({ x: a.x + (b.x - a.x) * t + ox, y: a.y + (b.y - a.y) * t + oy }); cur.push({ x: a.x + (b.x - a.x) * t1 + ox, y: a.y + (b.y - a.y) * t1 + oy }); }
+        seg -= step; left -= step; t = t1;
+        if (left <= 0) { if (on) flush(); on = !on; left = s * (on ? 0.5 + rnd() * 1.6 : 1.2 + rnd() * 3.5); }
+      }
+    }
+    if (on) flush();
+  }
+  function paintGlossGroup(c, grp) {
+    const s = grp.reduce((a, op) => a + op.size, 0) / grp.length; // まとまりの太さ(平均)
+    const pad = Math.max(...grp.map(op => op.size / 2 + (hasEdge(op) ? op.osize : 0))) + s * 0.6 + 4;
+    const b = boxOf(grp, pad); if (!b) return;
+    const edged = grp.some(hasEdge);
+    for (const op of grp) if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
+    const g = gk.getContext('2d'), w = wk.getContext('2d'), h = hk.getContext('2d');
+    const clr = x => x.clearRect(b.x0, b.y0, b.w, b.h);
+    clr(g); clr(h);
+    for (const op of grp) drawPath(g, op.pts, op.size, op.color, 1);          // M
+    h.save(); h.filter = 'blur(' + (s * 0.22).toFixed(2) + 'px)';
+    h.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); h.restore(); // B
+    // 縁の帯: B を (+dx, +dy) にずらしたもの から (-dx, -dy) にずらしたもの を抜く = (dx, dy) と反対側の縁の内側
+    const rim = (dx, dy) => {
+      clr(w);
+      w.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 + dx, b.y0 + dy, b.w, b.h);
+      w.save(); w.globalCompositeOperation = 'destination-out';
+      w.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 - dx, b.y0 - dy, b.w, b.h); w.restore();
+    };
+    const tint = (color, alpha, times = 1) => {
+      w.save(); w.globalCompositeOperation = 'source-in'; w.fillStyle = color; w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
+      g.save(); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = alpha;
+      for (let k = 0; k < times; k++) g.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+      g.restore();
+    };
+    const dark = mixTo(grp[0].color, 0, 0.5);
+    rim(s * 0.2, s * 0.26); tint(dark, 0.85);                                   // 右下の縁の影
+    // ツヤ: 線に沿ったところどころの筋を、形のふくらみで光が当たる側(左上の縁寄り)だけに残す。
+    // 重なった所はまとまり全体の形で決まるので、交わる所の真ん中にはツヤが出ない
+    clr(w);
+    for (const op of grp) glossDashes(w, op);
+    const lit = mk.getContext('2d');
+    lit.clearRect(b.x0, b.y0, b.w, b.h);
+    lit.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 - s * 0.12, b.y0 - s * 0.16, b.w, b.h);
+    lit.save(); lit.globalCompositeOperation = 'destination-out';
+    lit.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 + s * 0.12, b.y0 + s * 0.16, b.w, b.h); lit.restore();
+    // 光の当たる側は薄い帯なので、自分の上に重ねて濃くしてから 1 回だけ切り抜く
+    for (let k = 0; k < 4; k++) lit.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    w.save(); w.globalCompositeOperation = 'destination-in';
+    w.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    w.restore();
+    w.save(); w.filter = 'blur(' + Math.max(0.4, s * 0.025).toFixed(2) + 'px)'; w.globalCompositeOperation = 'copy';
+    w.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); w.restore();
+    tint('#ffffff', 0.95, 2);
+    c.save();
+    c.globalAlpha = grp[0].alpha ?? 1;
+    // ふちの外にうっすら影(フチ付きのときは付けない)
+    if (!edged) { c.shadowColor = 'rgba(0,0,0,0.28)'; c.shadowBlur = s * 0.35; c.shadowOffsetX = s * 0.06; c.shadowOffsetY = s * 0.1; }
+    c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    c.restore();
+  }
+  // 水彩(1.3.0、2026-10-24 ぶらんちの見本: 筆で塗ったような筋とかすれ)。筆の毛を何本も描いて、
+  // 毛ごとに位置・太さ・濃さ・長さを少しずつ変える(縁の毛ほど薄く短い = かすれた縁)。紙の目で少し抜く。
+  // 乱数は線の書き始めの位置と太さから決めるので、描いている途中・確定後・描き直しで同じ画素になる
   let paper = null;
   function paperPattern(ctx) {
     if (!paper) {
@@ -470,22 +545,51 @@
     }
     return ctx.createPattern(paper, 'repeat');
   }
+  // 半透明の線のフチ: 線をフチ幅だけ太らせた形から線の形を抜いた輪を敷く(中にフチ色が透けない)
+  function paintRingEdge(c, op) {
+    const b = boxOf([op], op.size / 2 + op.osize + 2); if (!b) return;
+    const m = mk.getContext('2d');
+    m.clearRect(b.x0, b.y0, b.w, b.h);
+    drawPath(m, op.pts, op.size + op.osize * 2, op.ec, 1);
+    drawPath(m, op.pts, op.size * 0.92, '#000', 1, 'destination-out');
+    c.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+  }
   function paintWatercolor(c, op) {
     const blur = wcBlur(op), b = boxOf([op], op.size / 2 + blur * 3 + 2); if (!b) return;
-    const g = gk.getContext('2d'), w = wk.getContext('2d');
-    g.clearRect(b.x0, b.y0, b.w, b.h); w.clearRect(b.x0, b.y0, b.w, b.h);
-    g.save(); g.filter = 'blur(' + blur.toFixed(2) + 'px)'; drawPath(g, op.pts, op.size, op.color, 1); g.restore();
-    // ふちの溜まり: にじんだ形から、細く強くぼかした芯を抜く
-    w.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-    w.save(); w.filter = 'blur(' + (op.size * 0.18).toFixed(2) + 'px)';
-    drawPath(w, op.pts, op.size * 0.55, '#000', 1, 'destination-out'); w.restore();
-    for (const x of [g, w]) {
-      x.save(); x.globalCompositeOperation = 'destination-out'; x.globalAlpha = 0.6;
-      x.fillStyle = paperPattern(x); x.fillRect(b.x0, b.y0, b.w, b.h); x.restore();
+    const w = wk.getContext('2d');
+    w.clearRect(b.x0, b.y0, b.w, b.h);
+    const rnd = opRandom(op, 1);
+    const pts = op.pts, n = pts.length;
+    // 下地の薄い塗り(筋のすき間が抜けすぎないように)
+    w.save(); w.filter = 'blur(' + (op.size * 0.03).toFixed(2) + 'px)';
+    // 下地は端の手前で止める(端は毛の筋だけ = かすれた端)
+    const cut = n > 6 ? pts.slice(Math.floor(n * 0.05), Math.max(Math.floor(n * 0.05) + 2, Math.ceil(n * 0.93))) : pts;
+    drawPath(w, cut, op.size * 0.8, op.color, 0.3); w.restore();
+    if (n > 1) {
+      // 点ごとの法線(前後の点から)
+      const nor = pts.map((p, k) => {
+        const a = pts[Math.max(0, k - 2)], q = pts[Math.min(n - 1, k + 2)];
+        const dx = q.x - a.x, dy = q.y - a.y, l = Math.hypot(dx, dy) || 1;
+        return { x: -dy / l, y: dx / l };
+      });
+      const N = Math.max(6, Math.min(20, Math.round(op.size / 2.5)));
+      for (let i = 0; i < N; i++) {
+        const u = (i + 0.5) / N - 0.5;                       // -0.5 .. 0.5(線の幅の中の位置)
+        const edge = Math.abs(u) * 2;                        // 0 = 真ん中 / 1 = 縁
+        const d = (u + (rnd() - 0.5) / N) * op.size * 0.92;
+        const wd = op.size / N * (2 + rnd() * 1.6);
+        const a = (0.1 + rnd() * 0.28) * (1 - edge * 0.5);
+        const s0 = Math.floor(n * rnd() * (0.04 + edge * 0.18)), s1 = n - Math.floor(n * rnd() * (0.06 + edge * 0.3));
+        if (s1 - s0 < 2) continue;
+        const line = [];
+        for (let k = s0; k < s1; k++) line.push({ x: pts[k].x + nor[k].x * d, y: pts[k].y + nor[k].y * d });
+        drawPath(w, line, wd, op.color, a);
+      }
     }
-    c.save();
-    c.globalAlpha = op.alpha * 0.28; c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-    c.globalAlpha = op.alpha * 0.6; c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    w.save(); w.globalCompositeOperation = 'destination-out'; w.globalAlpha = 0.4;
+    w.fillStyle = paperPattern(w); w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
+    c.save(); c.globalAlpha = op.alpha; c.filter = 'blur(0.5px)';
+    c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
     c.restore();
   }
   // 線の本体(フチは含まない)
@@ -546,7 +650,7 @@
   function paintStrokeTo(c, op) {
     if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
     if (op.tool === 'neon') return paintNeonGroup(c, [op]);
-    if (op.tool === 'watercolor') return paintWatercolor(c, op);
+    if (op.tool === 'watercolor') { if (hasEdge(op)) paintRingEdge(c, op); return paintWatercolor(c, op); }
     if (op.tool === 'gloss') return paintGlossGroup(c, [op]);
     if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     paintBody(c, op);
@@ -958,6 +1062,7 @@
   const curOsize = () => EDGE_TOOLS.includes(state.tool) ? (state.eo[state.tool] || 0) : 0;
   function setTool(t) {
     state.tool = t;
+    if (t === 'watercolor') state.eo.watercolor = 0; // 水彩は選ぶたびにフチなしから(上げればフチが付く。2026-10-24 ぶらんち)
     panel.classList.toggle('noedge', !EDGE_TOOLS.includes(t));
     panel.classList.toggle('eraser', t === 'eraser');
     cursorEl.classList.toggle('obj', t === 'eraser' && state.emode === 'object');
@@ -1376,8 +1481,8 @@
   // (ほかの道具は 0 = フチなし。引き継ぐと今までのペンにいきなりフチが付く)
   function loadEdgeSizes(s) {
     const n = v => typeof v === 'number' && v >= 0 && v <= 30 ? Math.round(v) : 0;
-    if (s.eo && typeof s.eo === 'object') return { brush: n(s.eo.brush), gloss: n(s.eo.gloss), marker: n(s.eo.marker) };
-    return { brush: s.tool === 'outline' ? n(s.osize || 4) : 0, gloss: 0, marker: 0 };
+    if (s.eo && typeof s.eo === 'object') return { brush: n(s.eo.brush), gloss: n(s.eo.gloss), marker: n(s.eo.marker), watercolor: 0 };
+    return { brush: s.tool === 'outline' ? n(s.osize || 4) : 0, gloss: 0, marker: 0, watercolor: 0 };
   }
   function load() {
     let data = null;
