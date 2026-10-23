@@ -240,7 +240,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.2.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.2.1'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -399,10 +399,13 @@
   const groupKind = op => {
     if (!op || op.kind === 'clear' || op.kind === 'break') return null;
     if (op.tool === 'neon') return 'neon';
-    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100);
+    // ペン・艶・マーカーのまとまりは、色・フチ色・フチ幅が同じ間だけ(1.2.1。色を変えて上に重ねた線は、フチごと上に乗る。
+    // 同じ色で続けて書いた文字は今まで通りフチがまとまり、あとの線のフチで先の線が切れない。2026-10-24 ぶらんち報告)
+    const look = op.color + '|' + (hasEdge(op) ? op.ec + '|' + op.osize : '-');
+    if (op.tool === 'marker') return 'marker@' + Math.round((op.alpha ?? MARKER_ALPHA) * 100) + '|' + look;
     // 艶はフチの有無にかかわらず続く間まとめる(線を全部 → 影を全部 → ツヤを全部。重なりがフチ付きのペンと同じく 1 本になじむ)
-    if (op.tool === 'gloss') return 'gloss@' + Math.round((op.alpha ?? 1) * 100);
-    if (hasEdge(op)) return 'outline'; // フチ付きのペンは、続く間フチをまとめる
+    if (op.tool === 'gloss') return 'gloss@' + Math.round((op.alpha ?? 1) * 100) + '|' + look;
+    if (hasEdge(op)) return 'outline|' + look; // フチ付きのペンは、続く間フチをまとめる
     return null;
   };
   const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
