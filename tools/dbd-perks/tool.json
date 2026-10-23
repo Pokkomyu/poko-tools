@@ -1,0 +1,10 @@
+{
+  "name": "dbd-perks",
+  "displayName": "パークスロット",
+  "version": "0.2.5",
+  "obs": {
+    "width": 1920,
+    "height": 1080,
+    "transparent": true
+  }
+}

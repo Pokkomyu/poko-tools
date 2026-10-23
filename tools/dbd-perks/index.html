@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パークスロット</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage" class="stage">
+
+  <!-- ===== 配信に映す領域 ===== -->
+  <section id="slots" class="slots layout-row" aria-label="パーク">
+    <button class="slot" type="button" data-i="0"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="1"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="2"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+    <button class="slot" type="button" data-i="3"><img class="slot-icon" alt="" hidden><span class="slot-in"><span class="slot-name"></span><span class="slot-char"></span></span></button>
+  </section>
+  <p class="notice">非公式のファンツールです。Behaviour Interactive とは関係ありません。</p>
+
+  <!-- ===== 操作パネル(OBSではクロップで隠す) ===== -->
+  <section class="control" aria-label="操作パネル">
+    <header class="control-head">
+      <span>操作パネル</span>
+      <span class="control-note">OBSではクロップで隠してね</span>
+    </header>
+
+    <div class="toggles">
+      <div class="seg" role="group" aria-label="役割">
+        <button type="button" data-role="k">キラー</button>
+        <button type="button" data-role="s">サバイバー</button>
+      </div>
+      <div class="seg" role="group" aria-label="並び">
+        <button type="button" data-layout="row">横並び</button>
+        <button type="button" data-layout="diamond">ひし形</button>
+      </div>
+    </div>
+    <div class="bg-row">
+      <span class="bg-label">背景</span>
+      <div class="seg" role="radiogroup" aria-label="背景">
+        <button type="button" data-bg="transparent" title="OBS の中では透明。ブラウザでは透明な部分を市松模様で見せる">透過</button>
+        <button type="button" data-bg="pink">ピンク</button>
+        <button type="button" data-bg="green" title="透過できない配信ソフト用(クロマキーで抜く)">グリーン</button>
+      </div>
+    </div>
+
+    <ol id="rows" class="rows"></ol>
+
+    <div class="options">
+      <label id="optIconLabel"><input type="checkbox" id="optIcon"> パークの画像</label>
+      <label><input type="checkbox" id="optFrame"> ひし形の枠</label>
+      <label id="optNameLabel"><input type="checkbox" id="optName"> パーク名</label>
+      <label><input type="checkbox" id="optChar"> キャラ名を表示</label>
+      <label><input type="checkbox" id="optSound"> 効果音</label>
+      <button id="poolBtn" class="btn-small" type="button">パークの設定</button>
+    </div>
+    <p id="poolInfo" class="pool-info"></p>
+
+    <div class="actions">
+      <button id="spinBtn" class="btn btn-start" type="button">全部まわす</button>
+    </div>
+
+    <footer class="foot">
+      <span id="version"></span>
+      <span id="dataDate"></span>
+    </footer>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- パークの設定(除外)。パネルの中に重ねる(配信に映らないように) -->
+    <div id="pool" class="pool" role="dialog" aria-modal="true" aria-labelledby="poolTitle" hidden>
+      <div class="pool-head">
+        <span id="poolTitle"></span>
+        <button id="poolClose" class="btn-small" type="button">閉じる</button>
+      </div>
+      <div class="preset">
+        <div class="preset-row">
+          <span class="preset-label">プリセット</span>
+          <select id="presetSel" class="preset-sel"></select>
+          <button id="presetLoad" class="btn-small" type="button">呼び出す</button>
+          <button id="presetDel" class="btn-small" type="button">削除</button>
+        </div>
+        <div class="preset-row">
+          <input id="presetName" class="preset-name" type="text" maxlength="20" placeholder="名前(空なら「プリセット1」…)">
+          <button id="presetSave" class="btn-small" type="button">今の設定を保存</button>
+        </div>
+        <p id="presetNow" class="preset-now"></p>
+      </div>
+      <div class="pool-filter">
+        <span>時期</span>
+        <div class="seg" role="radiogroup" aria-label="時期">
+          <button type="button" data-range="all">全期間</button>
+          <button type="button" data-range="some">期間を指定</button>
+        </div>
+      </div>
+      <div id="rangeRow" class="pool-filter range-row" hidden>
+        <select id="dlcFrom" aria-label="この DLC から"></select>
+        <span>〜</span>
+        <select id="dlcTo" aria-label="この DLC まで"></select>
+      </div>
+      <input id="poolSearch" class="pool-search" type="search" placeholder="名前・英語名・キャラ名で検索">
+      <div class="pool-bulk">
+        <span id="poolCount"></span>
+        <button id="poolAll" class="btn-small" type="button">この条件で全部入れる</button>
+        <button id="poolNone" class="btn-small" type="button">全部外す</button>
+      </div>
+      <div class="pool-tree">
+        <span id="rangeInfo" class="range-info"></span>
+        <button id="treeToggle" class="btn-small" type="button">すべて開く</button>
+      </div>
+      <ul id="poolList" class="pool-list"></ul>
+      <p class="pool-hint">チェックを外したパーク(未所持・禁止)は出ません。DLC の行の ▶ で開く / 閉じる、チェックでまとめて切り替え。OBS の「対話」では日本語が打てないので、英語名で探すか通常のブラウザで設定してね</p>
+    </div>
+  </section>
+</div>
+<script src="perks-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
