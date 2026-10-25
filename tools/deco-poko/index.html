@@ -164,6 +164,7 @@
         <button data-tool="gloss" title="ぷっくりした線に、ところどころツヤ。フチ幅を上げるとフチが付く">艶</button>
         <button data-tool="marker" title="半透明。続けて描いても重なりが濃くならない。フチ幅を上げるとフチが付く">マーカー</button>
         <button data-tool="neon" title="線の色で光るペン">ネオン</button>
+        <button data-tool="crayon" title="クレヨン。紙の目でぼそぼそ、縁はふわっと">クレヨン</button>
         <button data-tool="watercolor" title="筆で塗った水彩。重ねると濃くなる。フチ幅は選ぶたびに 0 に戻る">水彩</button>
         <button data-tool="eraser">消しゴム</button>
       </div>
@@ -240,7 +241,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.3.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.4.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -391,7 +392,6 @@
   //   outline は 1.0.x までの縁取り(= フチ付きの brush)。古い版の相手から届いたときのために描ける形で残す
   const EDGE_TOOLS = ['brush', 'gloss', 'marker', 'watercolor']; // 水彩は 1.3.0 から(選ぶたびにフチ幅 0 に戻す)
   const hasEdge = op => op.tool === 'outline' || (EDGE_TOOLS.includes(op.tool) && op.osize > 0);
-  const wcBlur = op => Math.max(1, op.size * 0.08);
   const MARKER_ALPHA = 0.4; // マーカーの濃さの初期値(スライダーで変えられる)
   const neonBlur = op => op.size * 1.5 + 6;
   // まとまりになる線の種類。縁取りはフチをまとめ、ネオンは光をまとめ、マーカーは重なりを濃くしない。それ以外の線と消去で区切る。
@@ -412,7 +412,8 @@
   const isMarkerKind = k => typeof k === 'string' && k.startsWith('marker');
   function strokeRadius(op) {
     if (op.tool === 'neon') return op.size / 2 + neonBlur(op) * 1.5 + 2;
-    if (op.tool === 'watercolor') return op.size / 2 + wcBlur(op) * 3 + 2 + (hasEdge(op) ? op.osize : 0);
+    if (op.tool === 'watercolor') return op.size / 2 * 1.9 + 4 + (hasEdge(op) ? op.osize : 0);
+    if (op.tool === 'crayon') return op.size * 0.85 + 4;
     if (op.tool === 'gloss') return op.size / 2 + (hasEdge(op) ? op.osize : 0) + op.size * 0.6 + 4; // 外のうっすら影の分
     if (hasEdge(op)) return (op.size + op.osize * 2) / 2 + 2;
     return op.size / 2 + 2;
@@ -432,50 +433,25 @@
     const w = Math.min(W, Math.ceil(x1)) - x0, h = Math.min(H, Math.ceil(y1)) - y0;
     return w > 0 && h > 0 ? { x0, y0, w, h } : null;
   }
-  // 艶ペン(1.3.0、2026-10-24 ぶらんちの見本: ケチャップのような、ぷっくりした線にところどころツヤ)。
-  // 続けて描いた艶(色・フチが同じ間)は 1 つの形として扱い、重なった所も「そういう形のもの」として影とツヤを計算し直す:
-  //   形 M = 線を全部不透明で塗ったもの / B = M をぼかしたもの(ふくらみ)
-  //   影   = 右下の縁: B を右下へずらしたもの から 左上へずらしたもの を抜いた部分(光は左上から)
-  //   ツヤ = 左上の縁の近くの細い帯を、固定のまだら模様で切り抜いたもの(ところどころにだけ出る)
   // 線ごとの乱数(書き始めの位置と太さから決める。描いている途中・確定後・描き直しで同じになる)
   function opRandom(op, salt) {
     const p0 = op.pts[0];
     let seed = (Math.round(p0.x * 10) * 73856093 ^ Math.round(p0.y * 10) * 19349663 ^ Math.round(op.size * 10) * 83492791 ^ salt) >>> 0;
-    return () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+    return () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
   }
-  // 線に沿って、ところどころに短いツヤの筋を引く(長さと間隔は線ごとの乱数)
-  function glossDashes(ctx, op) {
-    const rnd = opRandom(op, 7), s = op.size, pts = op.pts;
-    const ox = -s * 0.1, oy = -s * 0.14; // 光の方(左上)へ寄せる
-    if (pts.length === 1) { drawPath(ctx, [{ x: pts[0].x + ox, y: pts[0].y + oy }], s * 0.22, '#fff', 1); return; }
-    let on = rnd() < 0.5, left = s * (on ? 0.5 + rnd() * 1.6 : 0.4 + rnd() * 2.5), cur = [];
-    // 筋は真ん中が太く両端が細い(3 段に重ねる)。ときどき小さな点も付ける
-    const flush = () => {
-      if (cur.length > 1) {
-        const wmax = Math.max(1.5, s * (0.1 + rnd() * 0.16)), m = cur.length;
-        for (const [f, k] of [[0.45, 0], [0.75, 0.15], [1, 0.3]]) {
-          const a = Math.floor(m * k), z = Math.ceil(m * (1 - k));
-          if (z - a >= 2) drawPath(ctx, cur.slice(a, z), wmax * f, '#fff', 1);
-        }
-        if (rnd() < 0.35) {
-          const q = cur[m - 1];
-          drawPath(ctx, [{ x: q.x + s * (0.15 + rnd() * 0.25), y: q.y + s * 0.03 }], Math.max(1.5, s * 0.1), '#fff', 1);
-        }
-      }
-      cur = [];
-    };
-    for (let k = 1; k < pts.length; k++) {
-      const a = pts[k - 1], b = pts[k];
-      let seg = Math.hypot(b.x - a.x, b.y - a.y), t = 0;
-      while (seg > 0) {
-        const step = Math.min(seg, left);
-        const t1 = t + step / Math.hypot(b.x - a.x, b.y - a.y || 1e-9);
-        if (on) { if (!cur.length) cur.push({ x: a.x + (b.x - a.x) * t + ox, y: a.y + (b.y - a.y) * t + oy }); cur.push({ x: a.x + (b.x - a.x) * t1 + ox, y: a.y + (b.y - a.y) * t1 + oy }); }
-        seg -= step; left -= step; t = t1;
-        if (left <= 0) { if (on) flush(); on = !on; left = s * (on ? 0.5 + rnd() * 1.6 : 1.2 + rnd() * 3.5); }
-      }
-    }
-    if (on) flush();
+  // 艶ペン(1.4.0。2026-10-25 ぶらんち「ぐりぐりと同じ範囲を塗りつぶしたときに演算しなおすべき。光源の位置や絵の具の載せ方の向きを考えたらわかるはず」)。
+  // 続けて描いた艶(色・フチ・不透明度が同じ間)を 1 つの立体として、高さ → 面の向き → 光 を計算する:
+  //   高さ = 縁からの距離で丸める(細い線は管、塗りつぶした塊は縁が丸い山)+ 描いた線の芯に沿った小さな盛り上がり(絵の具を置いた向き)
+  //   明るさ = 光(左上・手前)に向いた面は明るく、反対の面は暗い / ツヤ = 光の反射が目に入る向きの面だけ白く(画面に固定したむらで、ところどころ)
+  // 線の外にはうっすら影。重ねて描いた所も、まとまり全体の形で計算し直す
+  const GL_L = (() => { const v = [-0.48, -0.62, 0.62], l = Math.hypot(...v); return v.map(x => x / l); })();
+  const GL_H = (() => { const v = [GL_L[0], GL_L[1], GL_L[2] + 1], l = Math.hypot(...v); return v.map(x => x / l); })();
+  function hashNoise(ix, iy) { let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function valueNoise(x, y) { // 0..1、格子の値を滑らかにつなぐ
+    const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = hashNoise(ix, iy), b = hashNoise(ix + 1, iy), c = hashNoise(ix, iy + 1), d = hashNoise(ix + 1, iy + 1);
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
   }
   function paintGlossGroup(c, grp) {
     const s = grp.reduce((a, op) => a + op.size, 0) / grp.length; // まとまりの太さ(平均)
@@ -483,44 +459,40 @@
     const b = boxOf(grp, pad); if (!b) return;
     const edged = grp.some(hasEdge);
     for (const op of grp) if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
-    const g = gk.getContext('2d'), w = wk.getContext('2d'), h = hk.getContext('2d');
-    const clr = x => x.clearRect(b.x0, b.y0, b.w, b.h);
-    clr(g); clr(h);
-    for (const op of grp) drawPath(g, op.pts, op.size, op.color, 1);          // M
-    h.save(); h.filter = 'blur(' + (s * 0.22).toFixed(2) + 'px)';
-    h.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); h.restore(); // B
-    // 縁の帯: B を (+dx, +dy) にずらしたもの から (-dx, -dy) にずらしたもの を抜く = (dx, dy) と反対側の縁の内側
-    const rim = (dx, dy) => {
-      clr(w);
-      w.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 + dx, b.y0 + dy, b.w, b.h);
-      w.save(); w.globalCompositeOperation = 'destination-out';
-      w.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 - dx, b.y0 - dy, b.w, b.h); w.restore();
-    };
-    const tint = (color, alpha, times = 1) => {
-      w.save(); w.globalCompositeOperation = 'source-in'; w.fillStyle = color; w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
-      g.save(); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = alpha;
-      for (let k = 0; k < times; k++) g.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-      g.restore();
-    };
-    const dark = mixTo(grp[0].color, 0, 0.5);
-    rim(s * 0.2, s * 0.26); tint(dark, 0.85);                                   // 右下の縁の影
-    // ツヤ: 線に沿ったところどころの筋を、形のふくらみで光が当たる側(左上の縁寄り)だけに残す。
-    // 重なった所はまとまり全体の形で決まるので、交わる所の真ん中にはツヤが出ない
-    clr(w);
-    for (const op of grp) glossDashes(w, op);
-    const lit = mk.getContext('2d');
-    lit.clearRect(b.x0, b.y0, b.w, b.h);
-    lit.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 - s * 0.12, b.y0 - s * 0.16, b.w, b.h);
-    lit.save(); lit.globalCompositeOperation = 'destination-out';
-    lit.drawImage(hk, b.x0, b.y0, b.w, b.h, b.x0 + s * 0.12, b.y0 + s * 0.16, b.w, b.h); lit.restore();
-    // 光の当たる側は薄い帯なので、自分の上に重ねて濃くしてから 1 回だけ切り抜く
-    for (let k = 0; k < 4; k++) lit.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-    w.save(); w.globalCompositeOperation = 'destination-in';
-    w.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-    w.restore();
-    w.save(); w.filter = 'blur(' + Math.max(0.4, s * 0.025).toFixed(2) + 'px)'; w.globalCompositeOperation = 'copy';
-    w.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); w.restore();
-    tint('#ffffff', 0.95, 2);
+    const g = gk.getContext('2d'), h = hk.getContext('2d');
+    g.clearRect(b.x0, b.y0, b.w, b.h); h.clearRect(b.x0, b.y0, b.w, b.h);
+    for (const op of grp) drawPath(g, op.pts, op.size, op.color, 1);              // 形
+    h.save(); h.filter = 'blur(' + (s * 0.12).toFixed(2) + 'px)';
+    for (const op of grp) drawPath(h, op.pts, op.size * 0.35, '#000', 0.6);       // 線の芯(絵の具を置いた向き)
+    h.restore();
+    // 高さの元: 形を 2 つの幅でぼかしたもの(縁の丸み用・なだらかな山用)。GPU のぼかしなので滑らか
+    const w = wk.getContext('2d'), m = mk.getContext('2d');
+    w.clearRect(b.x0, b.y0, b.w, b.h); m.clearRect(b.x0, b.y0, b.w, b.h);
+    w.save(); w.filter = 'blur(' + (s * 0.24).toFixed(2) + 'px)'; w.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); w.restore();
+    m.save(); m.filter = 'blur(' + (s * 1.1).toFixed(2) + 'px)'; m.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); m.restore();
+    const W0 = b.w, H0 = b.h, n = W0 * H0;
+    const img = g.getImageData(b.x0, b.y0, W0, H0), px = img.data;
+    const ridge = h.getImageData(b.x0, b.y0, W0, H0).data, b1 = w.getImageData(b.x0, b.y0, W0, H0).data, b2 = m.getImageData(b.x0, b.y0, W0, H0).data;
+    // 高さ = 縁の丸み(細い線は管)+ なだらかな山(塗りつぶした塊ほど真ん中が高い)+ 線の芯の盛り上がり
+    const R = s * 0.5, hgt = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      if (!px[i * 4 + 3]) continue;
+      hgt[i] = R * Math.sqrt(b1[i * 4 + 3] / 255) + R * 0.6 * (b2[i * 4 + 3] / 255) + R * 0.35 * (ridge[i * 4 + 3] / 255);
+    }
+    const base = hexToRgb(grp[0].color), cell = Math.max(10, s * 1.3);
+    for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) {
+      const i = y * W0 + x, a = px[i * 4 + 3]; if (!a) continue;
+      const hl = hgt[x > 0 ? i - 1 : i], hr = hgt[x < W0 - 1 ? i + 1 : i], hu = hgt[y > 0 ? i - W0 : i], hd = hgt[y < H0 - 1 ? i + W0 : i];
+      let nx = (hl - hr) / 2, ny = (hu - hd) / 2, nz = 1; const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+      const dif = nx * GL_L[0] + ny * GL_L[1] + nz * GL_L[2];
+      const shade = Math.max(0.45, Math.min(1.25, 1 + 0.9 * (dif - GL_L[2])));
+      const sp = Math.pow(Math.max(0, nx * GL_H[0] + ny * GL_H[1] + nz * GL_H[2]), 12);
+      const gx = b.x0 + x, gy = b.y0 + y;
+      const nv = valueNoise(gx / cell, gy / cell), spot = Math.min(1, Math.max(0, (nv - 0.58) / 0.1)); // ところどころ(3 割ほど。境目はなめらかに)
+      const k = Math.min(1, Math.max(0, (sp - 0.42) / 0.12)) * spot * 0.95; // 反射の強い所だけ、くっきり白く(横線・縦線にも出る強さ)
+      for (let ch = 0; ch < 3; ch++) px[i * 4 + ch] = Math.round(Math.min(255, base[ch] * shade) * (1 - k) + 255 * k);
+    }
+    g.putImageData(img, b.x0, b.y0);
     c.save();
     c.globalAlpha = grp[0].alpha ?? 1;
     // ふちの外にうっすら影(フチ付きのときは付けない)
@@ -528,22 +500,78 @@
     c.drawImage(gk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
     c.restore();
   }
-  // 水彩(1.3.0、2026-10-24 ぶらんちの見本: 筆で塗ったような筋とかすれ)。筆の毛を何本も描いて、
-  // 毛ごとに位置・太さ・濃さ・長さを少しずつ変える(縁の毛ほど薄く短い = かすれた縁)。紙の目で少し抜く。
-  // 乱数は線の書き始めの位置と太さから決めるので、描いている途中・確定後・描き直しで同じ画素になる
+  // 水彩(1.4.0。2026-10-25 ぶらんち「水彩は全然ダメ。類似のサンプルを Web 検索して見直して」)。
+  // Tyler Hobbs の方法(https://tylerxhobbs.com/essays/2017/a-generative-approach-to-simulating-watercolor-paints):
+  //   線の輪郭の多角形を、辺の中点を正規分布でずらす変形で崩し、ごく薄い層(数 %)を何十枚も重ねる。
+  //   層ごとに崩し方が違うので、縁がにじんでぼそぼそし、重なりの多い所ほど濃い。層のまとまりごとにむらで抜いて塗りむらを出す
+  // そのうえで、縁の溜まり(乾くと縁に色が集まる。形からぼかした形を抜いた帯を足す)と紙の目(少し抜く)を付ける。
+  // ずらし方の乱数は頂点の位置から決めるので、描いている途中でも描いた所の形は揺れず、描き直しても同じ画素になる
+  const gauss = (x, y, salt) => Math.max(-1.6, Math.min(1.6, (hashNoise(x + salt, y) + hashNoise(x, y + salt * 7) + hashNoise(x - salt * 3, y + 11) - 1.5) * 2)); // だいたい標準正規(裾は切る = とげを作らない)
+  function wcOutline(op) {
+    const r = op.size / 2, step = Math.max(2, op.size * 0.3), src = op.pts, pts = [src[0]];
+    let acc = 0;
+    for (let k = 1; k < src.length; k++) {
+      acc += Math.hypot(src[k].x - src[k - 1].x, src[k].y - src[k - 1].y);
+      if (acc >= step) { pts.push(src[k]); acc = 0; }
+    }
+    const last = src[src.length - 1];
+    if (pts.length > 1 && pts[pts.length - 1] !== last) pts.push(last);
+    if (pts.length === 1) {
+      const out = [];
+      for (let k = 0; k < 14; k++) { const t = k / 14 * Math.PI * 2; out.push({ x: pts[0].x + Math.cos(t) * r, y: pts[0].y + Math.sin(t) * r }); }
+      return out;
+    }
+    const nor = pts.map((p, k) => {
+      const a = pts[Math.max(0, k - 1)], q = pts[Math.min(pts.length - 1, k + 1)];
+      const dx = q.x - a.x, dy = q.y - a.y, l = Math.hypot(dx, dy) || 1;
+      return { x: -dy / l, y: dx / l };
+    });
+    const left = pts.map((p, k) => ({ x: p.x + nor[k].x * r, y: p.y + nor[k].y * r }));
+    const right = pts.map((p, k) => ({ x: p.x - nor[k].x * r, y: p.y - nor[k].y * r }));
+    const cap = (p, n, from) => { const out = [], a0 = Math.atan2(n.y, n.x) + (from ? 0 : Math.PI); for (let k = 1; k < 6; k++) { const t = a0 - k / 6 * Math.PI; out.push({ x: p.x + Math.cos(t) * r, y: p.y + Math.sin(t) * r }); } return out; };
+    return [...left, ...cap(pts[pts.length - 1], nor[nor.length - 1], true), ...right.reverse(), ...cap(pts[0], nor[0], false)];
+  }
+  function deform(poly, depth, variance, salt) {
+    for (let d = 0; d < depth; d++) {
+      const out = [];
+      for (let k = 0; k < poly.length; k++) {
+        const a = poly[k], b = poly[(k + 1) % poly.length];
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, ix = Math.round(mx * 4), iy = Math.round(my * 4);
+        const ang = hashNoise(ix + salt * 31, iy - d * 17) * Math.PI * 2, len = gauss(ix, iy, salt * 13 + d) * variance;
+        out.push(a, { x: mx + Math.cos(ang) * len, y: my + Math.sin(ang) * len });
+      }
+      poly = out; variance *= 0.6;
+    }
+    return poly;
+  }
   let paper = null;
-  function paperPattern(ctx) {
+  function paperPattern(ctx) { // 紙の目(細かい抜け)。画面に固定した模様なので描き直しても同じ
     if (!paper) {
-      // 32x32 の乱数を 3 倍に引き伸ばして、細かい砂目ではなく、むらのある紙の目にする
-      const n = document.createElement('canvas'); n.width = n.height = 32;
-      const q = n.getContext('2d'), img = q.createImageData(32, 32);
-      let seed = 20261024; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
-      for (let i = 0; i < img.data.length; i += 4) { img.data[i + 3] = Math.floor(rnd() * rnd() * 255); }
+      const n = document.createElement('canvas'); n.width = n.height = 64;
+      const q = n.getContext('2d'), img = q.createImageData(64, 64);
+      let seed = 20261024; const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+      for (let i = 0; i < img.data.length; i += 4) img.data[i + 3] = Math.floor(rnd() * rnd() * 255);
       q.putImageData(img, 0, 0);
-      paper = document.createElement('canvas'); paper.width = paper.height = 96;
-      const p = paper.getContext('2d'); p.imageSmoothingEnabled = true; p.drawImage(n, 0, 0, 96, 96);
+      paper = document.createElement('canvas'); paper.width = paper.height = 128;
+      const p = paper.getContext('2d'); p.imageSmoothingEnabled = true; p.drawImage(n, 0, 0, 128, 128);
     }
     return ctx.createPattern(paper, 'repeat');
+  }
+  let wcMask = null;
+  function wcMaskPattern(ctx) { // 塗りむら用(0.45〜1 のなめらかなむら)
+    if (!wcMask) {
+      wcMask = document.createElement('canvas'); wcMask.width = wcMask.height = 160;
+      const q = wcMask.getContext('2d'), img = q.createImageData(160, 160);
+      for (let y = 0; y < 160; y++) for (let x = 0; x < 160; x++) {
+        // 周期 160 でつながるように、4 隅の値を混ぜる
+        const f = (u, v) => valueNoise(u / 32, v / 32);
+        const fx = x / 160, fy = y / 160;
+        const v = f(x, y) * (1 - fx) * (1 - fy) + f(x - 160, y) * fx * (1 - fy) + f(x, y - 160) * (1 - fx) * fy + f(x - 160, y - 160) * fx * fy;
+        img.data[(y * 160 + x) * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0.15, (v - 0.2) * 1.4)));
+      }
+      q.putImageData(img, 0, 0);
+    }
+    return ctx.createPattern(wcMask, 'repeat');
   }
   // 半透明の線のフチ: 線をフチ幅だけ太らせた形から線の形を抜いた輪を敷く(中にフチ色が透けない)
   function paintRingEdge(c, op) {
@@ -555,42 +583,61 @@
     c.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
   }
   function paintWatercolor(c, op) {
-    const blur = wcBlur(op), b = boxOf([op], op.size / 2 + blur * 3 + 2); if (!b) return;
+    const r = op.size / 2, b = boxOf([op], r * 1.9 + 4); if (!b) return;
+    const w = wk.getContext('2d'), m = mk.getContext('2d');
+    w.clearRect(b.x0, b.y0, b.w, b.h);
+    const base = deform(wcOutline(op), 2, op.size * 0.12, 1);  // ゆったりした崩し
+    const LAYERS = 30, GROUP = 6;
+    for (let gi = 0; gi < LAYERS / GROUP; gi++) {
+      m.clearRect(b.x0, b.y0, b.w, b.h);
+      m.fillStyle = op.color; m.globalAlpha = 0.07;
+      for (let li = 0; li < GROUP; li++) {
+        const poly = deform(base, 3, op.size * 0.07, 2 + gi * GROUP + li); // 層ごとの小さな崩し(縁のにじみ)
+        m.beginPath(); m.moveTo(poly[0].x, poly[0].y);
+        for (let k = 1; k < poly.length; k++) m.lineTo(poly[k].x, poly[k].y);
+        m.closePath(); m.fill();
+      }
+      m.globalAlpha = 1;
+      // まとまりごとに、ずらしたむらで抜く(塗りむら)
+      m.save(); m.globalCompositeOperation = 'destination-in'; m.translate(gi * 53, gi * 37);
+      m.fillStyle = wcMaskPattern(m); m.fillRect(b.x0 - gi * 53, b.y0 - gi * 37, b.w, b.h); m.restore();
+      w.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    }
+    // 縁の溜まり: 形からぼかした形を抜いた帯(縁の内側)を、同じ色で足す
+    m.clearRect(b.x0, b.y0, b.w, b.h);
+    m.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
+    m.save(); m.globalCompositeOperation = 'destination-out'; m.filter = 'blur(' + (op.size * 0.14).toFixed(2) + 'px)';
+    m.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); m.restore();
+    w.save(); for (let k = 0; k < 2; k++) w.drawImage(mk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); w.restore();
+    // 紙の目
+    w.save(); w.globalCompositeOperation = 'destination-out'; w.globalAlpha = 0.3;
+    w.fillStyle = paperPattern(w); w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
+    c.save(); c.globalAlpha = op.alpha; c.filter = 'blur(0.6px)'; c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
+  }
+  // クレヨン(1.4.0、2026-10-25 ぶらんち「ちょっとモケモケしてる感じ」、ibisPaint のクレヨンペンが見本)。
+  // 芯をしっかり塗り、縁はぼかしてふわっと広げ、全体を紙の凹凸のような細かい粒(画面に固定)で抜く。
+  // 1 本の中の重なりは濃くならず、別の線と重ねると埋まっていく
+  let tooth = null;
+  function toothPattern(ctx) {
+    if (!tooth) {
+      const n = document.createElement('canvas'); n.width = n.height = 96;
+      const q = n.getContext('2d'), img = q.createImageData(96, 96);
+      let seed = 4242; const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+      for (let i = 0; i < img.data.length; i += 4) { const r = rnd(); img.data[i + 3] = r < 0.7 ? 200 + Math.floor(rnd() * 55) : Math.floor(rnd() * 90); }
+      q.putImageData(img, 0, 0);
+      tooth = document.createElement('canvas'); tooth.width = tooth.height = 144;
+      const p = tooth.getContext('2d'); p.imageSmoothingEnabled = true; p.drawImage(n, 0, 0, 144, 144);
+    }
+    return ctx.createPattern(tooth, 'repeat');
+  }
+  function paintCrayon(c, op) {
+    const b = boxOf([op], op.size * 0.85 + 4); if (!b) return;
     const w = wk.getContext('2d');
     w.clearRect(b.x0, b.y0, b.w, b.h);
-    const rnd = opRandom(op, 1);
-    const pts = op.pts, n = pts.length;
-    // 下地の薄い塗り(筋のすき間が抜けすぎないように)
-    w.save(); w.filter = 'blur(' + (op.size * 0.03).toFixed(2) + 'px)';
-    // 下地は端の手前で止める(端は毛の筋だけ = かすれた端)
-    const cut = n > 6 ? pts.slice(Math.floor(n * 0.05), Math.max(Math.floor(n * 0.05) + 2, Math.ceil(n * 0.93))) : pts;
-    drawPath(w, cut, op.size * 0.8, op.color, 0.3); w.restore();
-    if (n > 1) {
-      // 点ごとの法線(前後の点から)
-      const nor = pts.map((p, k) => {
-        const a = pts[Math.max(0, k - 2)], q = pts[Math.min(n - 1, k + 2)];
-        const dx = q.x - a.x, dy = q.y - a.y, l = Math.hypot(dx, dy) || 1;
-        return { x: -dy / l, y: dx / l };
-      });
-      const N = Math.max(6, Math.min(20, Math.round(op.size / 2.5)));
-      for (let i = 0; i < N; i++) {
-        const u = (i + 0.5) / N - 0.5;                       // -0.5 .. 0.5(線の幅の中の位置)
-        const edge = Math.abs(u) * 2;                        // 0 = 真ん中 / 1 = 縁
-        const d = (u + (rnd() - 0.5) / N) * op.size * 0.92;
-        const wd = op.size / N * (2 + rnd() * 1.6);
-        const a = (0.1 + rnd() * 0.28) * (1 - edge * 0.5);
-        const s0 = Math.floor(n * rnd() * (0.04 + edge * 0.18)), s1 = n - Math.floor(n * rnd() * (0.06 + edge * 0.3));
-        if (s1 - s0 < 2) continue;
-        const line = [];
-        for (let k = s0; k < s1; k++) line.push({ x: pts[k].x + nor[k].x * d, y: pts[k].y + nor[k].y * d });
-        drawPath(w, line, wd, op.color, a);
-      }
-    }
-    w.save(); w.globalCompositeOperation = 'destination-out'; w.globalAlpha = 0.4;
-    w.fillStyle = paperPattern(w); w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
-    c.save(); c.globalAlpha = op.alpha; c.filter = 'blur(0.5px)';
-    c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h);
-    c.restore();
+    w.save(); w.filter = 'blur(' + (op.size * 0.14).toFixed(2) + 'px)'; drawPath(w, op.pts, op.size * 1.05, op.color, 0.85); w.restore(); // ふわっとした縁
+    drawPath(w, op.pts, op.size * 0.7, op.color, 1);                                                                                     // 芯
+    w.save(); w.globalCompositeOperation = 'destination-in'; w.fillStyle = toothPattern(w); w.fillRect(b.x0, b.y0, b.w, b.h); w.restore();
+    c.save(); c.globalAlpha = op.alpha; c.drawImage(wk, b.x0, b.y0, b.w, b.h, b.x0, b.y0, b.w, b.h); c.restore();
   }
   // 線の本体(フチは含まない)
   function paintBody(c, op) {
@@ -651,6 +698,7 @@
     if (op.tool === 'marker') return paintGroupTo(c, [op], groupKind(op));
     if (op.tool === 'neon') return paintNeonGroup(c, [op]);
     if (op.tool === 'watercolor') { if (hasEdge(op)) paintRingEdge(c, op); return paintWatercolor(c, op); }
+    if (op.tool === 'crayon') return paintCrayon(c, op);
     if (op.tool === 'gloss') return paintGlossGroup(c, [op]);
     if (hasEdge(op)) drawPath(c, op.pts, op.size + op.osize * 2, op.ec, 1);
     paintBody(c, op);
@@ -1298,7 +1346,7 @@
 
   // ---------- 画面に出る小パレット(右クリック / 長押し)----------
   const qp = $('qp');
-  const QTOOLS = [['brush', 'ペン'], ['gloss', '艶'], ['marker', 'マーカー'], ['neon', 'ネオン'], ['watercolor', '水彩'], ['eraser', '消しゴム']];
+  const QTOOLS = [['brush', 'ペン'], ['gloss', '艶'], ['marker', 'マーカー'], ['neon', 'ネオン'], ['crayon', 'クレヨン'], ['watercolor', '水彩'], ['eraser', '消しゴム']];
   function openQuickPalette(x, y) {
     qp.textContent = '';
     const tools = document.createElement('div'); tools.className = 'qtools';
@@ -1476,7 +1524,7 @@
       }
     }, 300);
   }
-  const TOOL_IDS = ['brush', 'gloss', 'marker', 'neon', 'watercolor', 'eraser'];
+  const TOOL_IDS = ['brush', 'gloss', 'marker', 'neon', 'crayon', 'watercolor', 'eraser'];
   // フチ幅(道具ごと)。1.0.x の保存は osize 1 つで、縁取りを選んでいた時だけそのフチ幅をペンに引き継ぐ
   // (ほかの道具は 0 = フチなし。引き継ぐと今までのペンにいきなりフチが付く)
   function loadEdgeSizes(s) {
