@@ -241,7 +241,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.6.0'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.6.1'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -268,6 +268,7 @@
   const state = {
     tool: 'brush',
     size: 8,
+    sizes: {}, // 太さ(道具ごと。1.6.1 から。間違って消しゴムを太くしても、ペンに戻すとペンの太さ)
     alpha: 1,
     malpha: 0.4, // マーカーの濃さ(マーカーを選んでいる間の「不透明」スライダー)
     color: '#ff7fb3',
@@ -1284,8 +1285,13 @@
   });
   // 今の道具のフチ幅(フチを付けられない道具は 0)
   const curOsize = () => EDGE_TOOLS.includes(state.tool) ? (state.eo[state.tool] || 0) : 0;
+  // 太さは道具ごとに覚える(2026-10-26 ぽこのリスナーさんの声「間違って消しゴムにして太くして消して、ペンに戻ったら太いまま」)
+  const SIZE_DEFAULT = { eraser: 24 };
   function setTool(t) {
+    if (state.tool) state.sizes[state.tool] = state.size;
     state.tool = t;
+    state.size = state.sizes[t] || SIZE_DEFAULT[t] || 8;
+    $('size').value = state.size; $('sizeVal').textContent = state.size;
     if (t === 'watercolor') state.eo.watercolor = 0; // 水彩は選ぶたびにフチなしから(上げればフチが付く。2026-10-24 ぶらんち)
     panel.classList.toggle('noedge', !EDGE_TOOLS.includes(t));
     panel.classList.toggle('eraser', t === 'eraser');
@@ -1306,15 +1312,11 @@
     cursorEl.classList.toggle('obj', state.tool === 'eraser' && state.emode === 'object');
     save();
   }
-  const bindRange = (id, valId, key, scale) => {
-    const el = $(id);
-    el.addEventListener('input', () => {
-      state[key] = +el.value * scale;
-      $(valId).textContent = el.value;
-      updateCursorSize(); save();
-    });
-  };
-  bindRange('size', 'sizeVal', 'size', 1);
+  $('size').addEventListener('input', () => {
+    state.size = +$('size').value; state.sizes[state.tool] = state.size;
+    $('sizeVal').textContent = $('size').value;
+    updateCursorSize(); save();
+  });
   $('alpha').addEventListener('input', () => {
     const v = +$('alpha').value;
     if (state.tool === 'marker') state.malpha = v / 100; else state.alpha = v / 100;
@@ -1680,7 +1682,7 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       const settings = {
-        tool: state.tool, size: state.size, alpha: state.alpha, malpha: state.malpha, color: state.color,
+        tool: state.tool, size: state.size, sizes: state.sizes, alpha: state.alpha, malpha: state.malpha, color: state.color,
         oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, emode: state.emode, active: state.active,
         visible: state.visible, history: state.history, fab: state.fab,
         uiHidden: state.uiHidden, panelOpen: state.panelOpen,
@@ -1708,6 +1710,12 @@
     if (s.eo && typeof s.eo === 'object') return { brush: n(s.eo.brush), gloss: n(s.eo.gloss), marker: n(s.eo.marker), watercolor: 0 };
     return { brush: s.tool === 'outline' ? n(s.osize || 4) : 0, gloss: 0, marker: 0, watercolor: 0 };
   }
+  // 太さ(道具ごと)。1.6.0 までの保存は太さ 1 つなので、全部の道具をその太さで始める(今までと同じ太さ)
+  function loadSizes(s) {
+    const out = {}, ok = v => typeof v === 'number' && v >= 1 && v <= 200;
+    for (const t of TOOL_IDS) out[t] = s.sizes && ok(s.sizes[t]) ? Math.round(s.sizes[t]) : (ok(s.size) ? Math.round(s.size) : (SIZE_DEFAULT[t] || 8));
+    return out;
+  }
   function load() {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (_) {}
@@ -1715,6 +1723,7 @@
       const s = data.settings;
       Object.assign(state, {
         tool: TOOL_IDS.includes(s.tool) ? s.tool : 'brush', size: s.size || 8, alpha: s.alpha ?? 1, // 1.0.x の縁取りはフチ付きのペンに
+        sizes: loadSizes(s),
         malpha: typeof s.malpha === 'number' && s.malpha >= 0.05 && s.malpha <= 1 ? s.malpha : MARKER_ALPHA,
         color: isHex(s.color) ? s.color : state.color,
         oedge: ['auto', 'white', 'black', 'custom'].includes(s.oedge) ? s.oedge : 'auto',
