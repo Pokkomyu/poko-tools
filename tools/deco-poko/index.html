@@ -227,8 +227,8 @@
       <div class="layers" id="layers"></div>
     </div>
     <div class="row">
-      <button class="btn" id="undo">戻す</button>
-      <button class="btn" id="redo">やり直す</button>
+      <button class="btn" id="undo" title="ひとつ前に戻す">↩ 戻す</button>
+      <button class="btn" id="redo" title="戻したのを進める">↪ 進む</button>
       <button class="btn" id="clearLayer">このレイヤーを消す</button>
     </div>
     <div class="row">
@@ -241,7 +241,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.6.1'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.6.2'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -352,7 +352,7 @@
     });
   }
 
-  // ---------- 操作ログ(戻す / やり直す) ----------
+  // ---------- 操作ログ(戻す / 進む) ----------
   // op = 線   {kind: 'stroke', id, layer, tool, color, alpha, size, ec(フチ色。確定時に決める), osize(フチ幅。0 はフチなし), pts: [{x, y}]}
   //    | 消去 {kind: 'clear', id, layer: 0..2 | 'all'}
   //    | 線ごと消す {kind: 'erase', id, layer, targets: [線の id]}(オブジェクト消しゴム。targets の線を描き直しで飛ばす。戻すと線が戻る)
