@@ -140,11 +140,15 @@
     background: rgba(255,255,255,.04);
   }
   .layer.on { background: var(--accent-soft); border-color: var(--accent); }
+  /* 表示 / 非表示は目のマーク(1.6.3。丸では押せると気付かれにくかった、2026-10-27 がおちゃんの声)。非表示は斜線 */
   .layer .eye {
-    width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--ink-dim);
-    flex: none;
+    width: 20px; height: 18px; flex: none; display: grid; place-items: center; padding: 0;
+    border: 0; border-radius: 5px; background: transparent; color: var(--ink); cursor: pointer;
   }
-  .layer.visible .eye { background: var(--ink); border-color: var(--ink); }
+  .layer .eye:hover { background: rgba(255,255,255,.12); }
+  .layer .eye svg { width: 18px; height: 18px; display: block; }
+  .layer:not(.visible) .eye { color: var(--ink-dim); }
+  .layer:not(.visible) .lname { color: var(--ink-dim); text-decoration: line-through; }
   .hint { color: var(--ink-dim); font-size: 10px; text-align: center; margin-top: 4px; }
   .sep { height: 1px; background: var(--panel-edge); margin: 10px -12px; }
 </style>
@@ -241,7 +245,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.6.2'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.6.3'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -1576,9 +1580,15 @@
     for (let i = 0; i < LAYER_COUNT; i++) {
       const d = document.createElement('div');
       d.className = 'layer' + (i === state.active ? ' on' : '') + (state.visible[i] ? ' visible' : '');
-      const eye = document.createElement('span'); eye.className = 'eye'; eye.title = '表示/非表示';
+      const eye = document.createElement('button'); eye.type = 'button'; eye.className = 'eye';
+      eye.title = state.visible[i] ? '表示中(押すと隠す)' : '隠しています(押すと表示)';
+      eye.setAttribute('aria-label', 'レイヤー ' + (i + 1) + (state.visible[i] ? ' を隠す' : ' を表示'));
+      // 目のマーク。隠しているときは斜線
+      eye.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'
+        + (state.visible[i] ? '' : '<path d="M3 3l18 18"/>') + '</svg>';
       eye.addEventListener('click', ev => { ev.stopPropagation(); state.visible[i] = !state.visible[i]; refreshLayers(); render(); save(); });
-      const name = document.createElement('span'); name.textContent = i + 1;
+      const name = document.createElement('span'); name.className = 'lname'; name.textContent = i + 1;
       d.append(eye, name);
       d.addEventListener('click', () => { state.active = i; refreshLayers(); save(); });
       layersEl.appendChild(d);
