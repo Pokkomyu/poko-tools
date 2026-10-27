@@ -150,6 +150,15 @@
   .layer:not(.visible) .eye { color: var(--ink-dim); }
   .layer:not(.visible) .lname { color: var(--ink-dim); text-decoration: line-through; }
   .hint { color: var(--ink-dim); font-size: 10px; text-align: center; margin-top: 4px; }
+  /* 下絵(1.7.0): 画像があるときだけ表示 / 濃さ / 消すを出す */
+  #underlayRow .btn { flex: none; padding: 5px 8px; }
+  #underlayRow input[type=range] { flex: 1; min-width: 40px; }
+  #underlayRow:not(.has) .ulOnly { display: none; }
+  #underlayRow .eye { display: grid; place-items: center; }
+  #underlayRow .eye svg { width: 16px; height: 16px; }
+  #underlayRow.off .eye { opacity: .45; }
+  #underlayRow.has + .ulHint { display: none; }
+  .ulHint { margin: -4px 0 8px; text-align: left; }
   .sep { height: 1px; background: var(--panel-edge); margin: 10px -12px; }
 </style>
 </head>
@@ -230,6 +239,15 @@
       <label>レイヤー</label>
       <div class="layers" id="layers"></div>
     </div>
+    <div class="row" id="underlayRow">
+      <label>下絵</label>
+      <button class="btn" id="underlayPick" title="描く場所の目安にする画像(配信画面のスクショなど)を選ぶ。Ctrl+V で貼り付けもできます">画像</button>
+      <button class="btn ulOnly eye" id="underlayEye" title="下絵を表示 / 隠す"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <input type="range" class="ulOnly" id="underlayAlpha" min="10" max="90" value="40" title="下絵の濃さ">
+      <button class="btn ulOnly" id="underlayClear" title="下絵を消す">×</button>
+      <input type="file" id="underlayFile" accept="image/*" hidden>
+    </div>
+    <div class="hint ulHint" id="underlayHint">Ctrl+V で画像を貼り付けても下絵にできます。下絵は配信にも薄く映り、Tab で UI を隠すと一緒に消えます</div>
     <div class="row">
       <button class="btn" id="undo" title="ひとつ前に戻す">↩ 戻す</button>
       <button class="btn" id="redo" title="戻したのを進める">↪ 進む</button>
@@ -245,7 +263,7 @@
 
 <script>
 (() => {
-  const VERSION = '1.6.3'; // tools/deco-poko/tool.json と揃える
+  const VERSION = '1.7.0'; // tools/deco-poko/tool.json と揃える
   // OBS のローカルファイル指定は全ソースが同じ origin(localStorage 共有)になるので、
   // 複数置くときは ?id=xxx を付けて保存先を分ける
   const BOARD_ID = new URLSearchParams(location.search).get('id') || '';
@@ -279,6 +297,7 @@
     oedge: 'auto', // 'auto' | 'white' | 'black' | 'custom'
     ocolor: '#ffffff', // oedge が custom のときのフチ色
     eo: { brush: 0, gloss: 0, marker: 0, watercolor: 0 }, // フチ幅(道具ごと)。0 はフチなし
+    underlay: { on: true, alpha: 0.4 }, // 下絵(1.7.0): 表示するか・濃さ。画像は別の保存場所(LS_KEY + ':underlay')
     emode: 'pixel', // 消しゴムの消し方: pixel(なぞった所)/ object(触れた線を 1 本まるごと。iOS のオブジェクト消しゴム)
     active: 0,
     visible: [true, true, true],
@@ -345,6 +364,7 @@
       vctx.clearRect(0, 0, VW, VH);
       vctx.setTransform(vs, 0, 0, vs, vox, voy);
       if (tempDirty && stroke) paintTemp(); // 描いている途中の表示を、このフレームで 1 回だけ作る
+      drawUnderlay(vctx);
       for (let i = 0; i < LAYER_COUNT; i++) {
         if (!state.visible[i]) continue;
         // 縁取りを続けて描いている途中は、まとまり全体を temp に描き直しているので、始まる前の画像の上に重ねる
@@ -1609,6 +1629,7 @@
   function setUiHidden(h) {
     state.uiHidden = h;
     ui.classList.toggle('hidden', h);
+    render(); // 下絵も一緒に出し入れ
     save();
   }
   function setPanelOpen(o) {
@@ -1658,6 +1679,77 @@
     if (e.key === 'Escape') { closeQuickPalette(); if (picking) setPicking(false); }
   });
 
+  // ---------- 下絵(1.7.0、2026-10-27 がおちゃんの声・ぽこ「A で」)----------
+  // 1 画面で OBS の対話ウィンドウから描くと、後ろの配信画面が見えず「どのあたりに描かれるか」が分からない。
+  // 配信画面のスクショなどを読み込み、レイヤーの下に薄く敷く(ボードに収まるよう縦横比を保って中央に)。
+  // ボードに出したものは配信にも映るので、UI を出している間だけ表示する(Tab で UI を隠すと一緒に消える)。
+  // 絵(レイヤー)には入らない。スポイト(ボードから拾う)は下絵の色も拾える。一緒にデコるでは相手に送らない(自分だけ)。
+  // 入れ方: 画像ボタン(ファイルを選ぶ)/ Ctrl+V で貼り付け / ドラッグ & ドロップ。
+  //   OBS のブラウザソースはファイル選択とドロップの受け口を持たない(obs-browser に CefDialogHandler / CefDragHandler が無い)ので、OBS では主に Ctrl+V
+  const UL_KEY = LS_KEY + ':underlay', UL_MAX = 1600;
+  let underlayImg = null;
+  function drawUnderlay(ctx) {
+    if (!underlayImg || !state.underlay.on || state.uiHidden) return;
+    const iw = underlayImg.width, ih = underlayImg.height, k = Math.min(W / iw, H / ih);
+    const w = iw * k, h = ih * k;
+    ctx.save(); ctx.globalAlpha = state.underlay.alpha;
+    ctx.drawImage(underlayImg, (W - w) / 2, (H - h) / 2, w, h); ctx.restore();
+  }
+  function refreshUnderlayUi() {
+    const row = $('underlayRow');
+    row.classList.toggle('has', !!underlayImg);
+    row.classList.toggle('off', !state.underlay.on);
+    $('underlayAlpha').value = Math.round(state.underlay.alpha * 100);
+  }
+  // 画像を読み込んで縮小(長い辺 1600px)し、保存する。透明な画像は PNG、それ以外は JPEG(保存の容量を節約)
+  function setUnderlayFromBlob(blob) {
+    if (!blob || !/^image\//.test(blob.type || '')) return;
+    const url = URL.createObjectURL(blob), img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const k = Math.min(1, UL_MAX / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      underlayImg = cv; state.underlay.on = true;
+      refreshUnderlayUi(); render(); save();
+      let data = cv.toDataURL('image/png');
+      if (data.length > 1.5e6) data = cv.toDataURL('image/jpeg', 0.85);
+      try { localStorage.setItem(UL_KEY, data); } catch (err) { console.warn('下絵を保存できませんでした(容量)', err); }
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+  function clearUnderlay() {
+    underlayImg = null; refreshUnderlayUi(); render();
+    try { localStorage.removeItem(UL_KEY); } catch (_) {}
+  }
+  function loadUnderlay() {
+    let data = null;
+    try { data = localStorage.getItem(UL_KEY); } catch (_) {}
+    if (!data) return Promise.resolve();
+    return new Promise(res => { const img = new Image(); img.onload = () => { underlayImg = img; res(); }; img.onerror = () => res(); img.src = data; });
+  }
+  $('underlayPick').addEventListener('click', () => $('underlayFile').click());
+  $('underlayFile').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) setUnderlayFromBlob(f); e.target.value = ''; });
+  $('underlayEye').addEventListener('click', () => { state.underlay.on = !state.underlay.on; refreshUnderlayUi(); render(); save(); });
+  $('underlayAlpha').addEventListener('input', () => { state.underlay.alpha = +$('underlayAlpha').value / 100; render(); save(); });
+  $('underlayClear').addEventListener('click', clearUnderlay);
+  // Ctrl+V(画像のときだけ。色コードの欄に文字を貼るときは邪魔しない)
+  document.addEventListener('paste', e => {
+    const items = e.clipboardData ? [...e.clipboardData.items] : [];
+    const it = items.find(x => x.kind === 'file' && /^image\//.test(x.type));
+    if (!it) return;
+    e.preventDefault();
+    setUnderlayFromBlob(it.getAsFile());
+  });
+  // ドラッグ & ドロップ(普通のブラウザ向け)
+  view.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  view.addEventListener('drop', e => {
+    const f = e.dataTransfer && [...e.dataTransfer.files].find(x => /^image\//.test(x.type));
+    if (!f) return;
+    e.preventDefault(); setUnderlayFromBlob(f);
+  });
+
   // ---------- persistence ----------
   // 保存: 設定 + レイヤーの画像(1.1 までの版でも開ける形)+ 線の記録(1.2.0 から)。
   // 線の記録 = base(戻せない部分の画像)+ ops(直近 100 個)。読み込むと base + ops で描き直すので、
@@ -1693,7 +1785,7 @@
     saveTimer = setTimeout(() => {
       const settings = {
         tool: state.tool, size: state.size, sizes: state.sizes, alpha: state.alpha, malpha: state.malpha, color: state.color,
-        oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, emode: state.emode, active: state.active,
+        oedge: state.oedge, ocolor: state.ocolor, eo: state.eo, emode: state.emode, underlay: state.underlay, active: state.active,
         visible: state.visible, history: state.history, fab: state.fab,
         uiHidden: state.uiHidden, panelOpen: state.panelOpen,
       };
@@ -1743,6 +1835,7 @@
         history: Array.isArray(s.history) ? s.history.filter(isHex).slice(0, 8) : [], fab: s.fab || null,
         uiHidden: !!s.uiHidden, panelOpen: !!s.panelOpen,
         emode: s.emode === 'object' ? 'object' : 'pixel',
+        underlay: { on: !(s.underlay && s.underlay.on === false), alpha: s.underlay && typeof s.underlay.alpha === 'number' && s.underlay.alpha >= 0.1 && s.underlay.alpha <= 0.9 ? s.underlay.alpha : 0.4 },
       });
     }
     const promises = [];
@@ -1811,7 +1904,7 @@
   $('ver').textContent = VERSION;
   window.addEventListener('resize', () => { resize(); if (state.fab) placeFab(state.fab.x, state.fab.y); });
   resize();
-  load().then(() => { applySettingsToUi(); render(); });
+  Promise.all([load(), loadUnderlay()]).then(() => { applySettingsToUi(); refreshUnderlayUi(); render(); });
 })();
 </script>
 </body>
