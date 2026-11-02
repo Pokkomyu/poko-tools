@@ -1,0 +1,984 @@
+# test-case master: パークスロット(tools/dbd-perks)
+#
+# スキーマ: SQA schemas/test-case-master.schema.yaml / 生成方針: SQA docs/features/test-case-master.md
+# 自動テストなし(file:// 前提)。semi_auto = ヘッドレス Chromium(playwright)で
+# file:///<repo>/tools/dbd-perks/index.html を 1920x1080 で開き、スクショと computed style を取る。
+# manual = OBS 実機や人の目。evidence は docs/development/evidence/<ticket>/ に <test_case_id>-*.png / .txt で残す。
+#
+# 共通の下ごしらえ(semi_auto):
+#   - 状態は localStorage キー "poko-dbd-perks-v1" に JSON を入れてから開く(addInitScript)。
+#     例: {"role":"k","layout":"row","bg":"transparent","showIcon":true,"showFrame":true,"showName":true,
+#          "showChar":false,"sound":false,"k":{"slots":["K25P03","K38P02","No_One_Escapes_Death",null],"locked":[false,false,false,false],"excluded":[]}}
+#   - 画像ありモード(.slots.icons)は app.js:201-208 が icons/ の 1 枚を読めたときだけ付く。
+#     file:// の同じディレクトリなら Chromium は img を読める。.slots に icons クラスが付いたことを待ってから撮る。
+#   - 回転は #spinBtn のクリック、または .slot のクリック(1 枠)。停止は SPIN_MS 1400ms + 枠ごとに 380ms(app.js:21-22)。
+#   - ::before の computed style は page.evaluate(() => getComputedStyle(el, "::before")) で取る。
+
+meta:
+  repo: poko-tools
+  feature: dbd-perks
+  ticket_id: dbd-perks-official-perk-bg
+  updated: 2026-11-03
+
+test_cases:
+  - test_case_id: TC-PKT-001
+    title: '横並び・待機: 素材のひし形の対角線が slot(300px)に合い、回転なし・枠線なし・影なしで敷かれる'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/official/perk-bg.png
+    risk:
+      failure_mode: background-size / position / repeat の未指定や基底 .slot::before(left/top 14.6%・70.7%・border・box-shadow・rotate)の打ち消し漏れで、素材が縮む・ずれる・タイル状に並ぶ・四角い線が出る。素材のひし形は画像の 96%(bbox 6..252)なので 100% で敷くと今の枠より小さくなる
+      business_impact: 配信画面の枠が崩れる
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / bg transparent / showIcon・showFrame・showName true / k.slots は 4 枠とも null(待機)'
+      - 画像ありモード(.slots.icons)が付いている
+    steps:
+      - 1920x1080 でページを開き .slots.icons を待つ
+      - 全画面スクショを撮る(TC-PKT-001-row-idle.png)
+      - 4 つの .slot について ::before の computed style を取る(left, top, width, height, border-width, border-radius, box-shadow, transform, background-image, background-size, background-repeat, background-position)
+    expected:
+      - 4 枠とも紫のひし形+黒い石の縁が各 slot(300px 四方)の中央に 1 つずつ、先端が slot の 4 辺の中央(±3px)に来る(対角線 = 300px。今までの枠と同じ大きさ)。白いひし形・インク色の枠線・角丸・内側の色線は出ない
+      - 'computed style: 素材の 96% が 300px になる大きさで中央に敷かれている(実装どおりなら left -6px / top -6px / width 312px / height 312px)/ border-width 0px / border-radius 0px / box-shadow none / transform none / background-image に official/perk-bg.png / background-size contain / background-repeat no-repeat / background-position 50% 50%'
+      - 4 枠とも結果が同一
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-002
+    title: 'ひし形並び・待機: 4 枠の素材が上・左・右・下に並び、隣の枠と重ならない'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: ひし形並びでは slot の正方形同士が重なる(style.css:123-126)。素材の透明部分が透明でない、または素材が大きすぎて隣の枠の縁に食い込む
+      business_impact: 配信画面の枠が崩れる
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role s / layout diamond / bg transparent / showIcon・showFrame・showName true / s.slots は 4 枠とも null'
+      - 画像ありモードが付いている
+    steps:
+      - 1920x1080 で開き .slots.icons を待つ
+      - 全画面スクショ(TC-PKT-002-diamond-idle.png)
+      - 隣り合う 2 枠(data-i=0 と 1)の正方形が重なる領域(x 500..643, y 390..533)の中央付近のピクセル色を取る
+    expected:
+      - 上・左・右・下に素材のひし形が 1 つずつ。隣の枠の縁が別の枠の上に乗っていない。枠と枠の間(gap 14px)は背景(市松)が見える
+      - 重なり領域のピクセルは市松の灰色(素材の紫・黒ではない)
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-003
+    title: 役割 キラー / サバイバーで素材が同じ(赤 / 青の色線が出ない)
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: .slot.k::before / .slot.s::before(style.css:85-86)の inset box-shadow が詳細度・記述順で残り、紫のひし形に赤 / 青の四角い線が出る。k と s で見た目が変わる
+      business_impact: owner 決定(色線を消す)と違う表示
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: layout row / bg transparent / showIcon・showFrame true / 4 枠とも null'
+      - 画像ありモードが付いている
+    steps:
+      - role k で開き、.slot[data-i="0"] の ::before の computed style(box-shadow, border-width, background-image, transform)と slot 領域のスクショを取る(TC-PKT-003-k.png)
+      - パネルの「サバイバー」を押して role s にし、同じものを取る(TC-PKT-003-s.png)
+      - 2 つの computed style と、slot 領域(名前・画像を除く ::before の範囲)のスクショを比べる
+    expected:
+      - k / s とも box-shadow none、border-width 0px、transform none、background-image は素材
+      - 2 つの computed style が一致し、slot 領域のスクショが一致する(赤 / 青の線がどちらにもない)
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-004
+    title: '回転中の地色が素材のまま(ピンク #fff3fa や旧グラデに戻らない)'
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: .slot.spinning::before(style.css:87)や .icons .slot.spinning::before(:141)の background が素材を上書きし、回転中だけ地がピンク / グラデになってちらつく
+      business_impact: 配信中に目立つ
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / bg pink / showIcon・showFrame・showName true / sound false / 4 枠とも null・固定なし'
+      - 画像ありモードが付いている。抽選できるパークが 4 個以上ある(既定)
+    steps:
+      - '#spinBtn を押す'
+      - 400ms 後(全枠 spinning 中)に全画面スクショ(TC-PKT-004-spinning.png)と、4 枠の ::before の computed background-image / background-color を取る
+      - 300ms 間隔でさらに 3 回スクショを撮る
+      - 全枠が stopped になるまで待つ
+    expected:
+      - '回転中の 4 枠とも ::before の background-image が素材(perk-bg.png)で、background-color は transparent(rgba(0, 0, 0, 0))。ピンク #fff3fa・radial-gradient は出ない'
+      - 回転中の各スクショでひし形の地が紫のまま。パーク画像だけが切り替わる
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-005
+    title: 停止直後のポップが回転なし(scale だけ)で、終わりに角度・大きさがジャンプしない
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: 旧 keyframe slot-pop(style.css:89)の rotate(45deg) が画像ありにも当たり素材が 45° 回る。別 keyframe にしても最終フレーム(scale 1)と静止状態(transform none)が違い、終了時に飛ぶ。animation-name だけ変えて duration / easing が外れる
+      business_impact: 止まった時の演出が崩れる
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role s / layout diamond / bg transparent / showIcon・showFrame・showName true / sound false / 4 枠とも null'
+      - 画像ありモードが付いている
+    steps:
+      - '#spinBtn を押し、.slot[data-i="0"] に stopped が付くのを待つ'
+      - すぐに el.getAnimations({subtree:true}) で ::before のアニメを pause し currentTime を 50%(225ms)にして、::before の computed transform と animation-name / animation-duration / animation-timing-function を取り、スクショ(TC-PKT-005-pop-mid.png)
+      - アニメを再開し終了まで待ってから、::before の computed transform を取りスクショ(TC-PKT-005-pop-end.png)
+    expected:
+      - animation-name が slot-pop(rotate 前提)ではなく回転なしの keyframe。duration 0.45s、timing-function は cubic-bezier(.2, 1.6, .4, 1)のまま
+      - 50% 時点の transform は matrix(a, 0, 0, a, 0, 0) の形(回転成分 0)。素材の先端が上下左右を向いたまま拡大縮小している
+      - 終了後の transform は none または matrix(1, 0, 0, 1, 0, 0)。終了前後のスクショで素材の位置・大きさ・向きが同じ
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-006
+    title: 大きいパーク画像の端が素材の石の縁に乗らない
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/icons
+    risk:
+      failure_mode: 素材のひし形は bbox 6..252 で、今の 70.7% 回転枠より内側がやや狭い。.slot-icon(13% / 74%)の大きいパーク画像の端が縁に重なる
+      business_impact: ゲーム画面と違う印象(見た目)
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - tools/dbd-perks/icons/*.png の不透明ピクセルの外接矩形(bbox)を python で算出し、キラー・サバイバーそれぞれ bbox が大きい順に 4 件の id を選んである
+      - '状態: showIcon・showFrame・showName true / bg pink。k.slots と s.slots に選んだ 4 件を入れ、locked は全部 true'
+    steps:
+      - role k / layout row で開き、全画面スクショ(TC-PKT-006-k-row.png)と各 slot の 2 倍拡大クロップを撮る
+      - role s / layout diamond で開き、同じく撮る(TC-PKT-006-s-diamond.png)
+      - 人の目(owner / ぽこ)で、画像の白い線画が黒い石の縁に乗っていないか・縁との余白がゲームの装備画面に近いかを見る
+    expected:
+      - 8 枚のパーク画像とも、線画が石の縁の内側に収まる(縁に乗らない)
+      - 乗る場合は .icons .slot-icon の 13% / 74% を詰める判断を owner に求める(review_required)
+    evidence:
+      required:
+        - screenshot
+      path: null
+    review:
+      review_required: true
+      review_reason:
+        - visual_confirmation
+      blocking_release: false
+    manual_reduction_plan: 縁の内接正方形(先端 7px 内側・縁の太さを引いた範囲)と画像 bbox の交差をピクセル計算で判定する関数を作れば semi_auto のまま人の目を減らせる
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-007
+    title: '横並び: 2 行の長い名前がひし形の下端に重ならず、間隔が今までと同程度'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: 素材を slot より大きく(104%)敷くので先端は slot 下端に揃うはずだが、敷き方がずれると名前(top calc(100% + 4px))との間隔が変わる。2 行名で石の縁に重なる、または離れすぎて浮く
+      business_impact: 読みにくい・不格好
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / bg pink / showIcon・showFrame・showName true / showChar true / k.slots = ["K25P03","K38P02","No_One_Escapes_Death",<任意の短い名前の id>]、locked 全 true'
+      - 画像ありモードが付いている
+    steps:
+      - 1920x1080 で開き .slots.icons を待つ
+      - 全画面スクショ(TC-PKT-007-row-names.png)
+      - 各 slot の .slot-in の boundingClientRect と、slot の ::before の boundingClientRect を取る
+    expected:
+      - K25P03 は 2 行(「悶絶のフック：」で改行)になり、名前の上端が slot 下端(素材の先端)より下。文字が石の縁に乗らない
+      - 名前の上端と slot 下端の距離が 4px 以上 16px 以下(浮きすぎない)
+      - キャラ名(.slot-char)が名前の下に出る
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-008
+    title: 'ひし形並び: 上下左右の名前が斜辺・隣の枠に重ならない'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: 左右の名前(right/left calc(100% + 14px)、縦中央)が素材の先端・斜辺や石の縁にかかる。上下の 2 行名が隣の枠にかかる
+      business_impact: 読みにくい
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout diamond / bg pink / showIcon・showFrame・showName true / showChar true / k.slots = ["K25P03","No_One_Escapes_Death","K38P02","K25P03" 以外の長い名前 1 件]、locked 全 true'
+      - 画像ありモードが付いている
+    steps:
+      - 1920x1080 で開き .slots.icons を待つ
+      - 全画面スクショ(TC-PKT-008-diamond-names.png)
+      - 4 つの .slot-in の boundingClientRect と、各 slot の ::before の boundingClientRect を取る
+    expected:
+      - data-i=0 の名前は上の枠の上、data-i=3 は下の枠の下、data-i=1 は左の枠の左(右寄せ)、data-i=2 は右の枠の右(左寄せ)
+      - どの名前の矩形も、どの slot の ::before 矩形の「素材が不透明な領域(ひし形)」と重ならない。左右の名前の縦中央が枠の先端の高さに揃う
+      - 名前が隣の枠の名前・素材と重ならない
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-009
+    title: 'パーク名なし(no-name): 素材と画像だけが出て名前領域の残骸がない'
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: no-name で .slot-in は消えるが、素材の変更で空の「？」や名前の余白が残る / 素材が消える
+      business_impact: 見た目
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role s / bg transparent / showIcon・showFrame true / showName false / s.slots に任意の 4 件、locked 全 true'
+      - 画像ありモードが付き、.slots に no-name が付いている
+    steps:
+      - layout row で開きスクショ(TC-PKT-009-row.png)。.slot-in の computed display を取る
+      - layout diamond で開きスクショ(TC-PKT-009-diamond.png)
+    expected:
+      - 両方で 4 枠とも素材のひし形+パーク画像だけ。文字が一切出ない(.slot-in display none)
+      - 素材の位置・大きさは TC-PKT-001 / 002 と同じ
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-010
+    title: '枠なし(no-frame)× 画像あり: 素材が出ず濃い影の画像だけ、解除で素材が戻る'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: 新しい .icons .slot::before が .no-frame .slot::before(style.css:157)より後ろに来る、または display を書いて no-frame が効かず素材が出続ける。逆に解除後に素材が戻らない
+      business_impact: 「ひし形の枠」の設定が効かない
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / bg pink / showIcon true / showFrame false / k.slots に任意の 4 件、locked 全 true'
+      - 画像ありモードが付き、.slots に no-frame が付いている
+    steps:
+      - layout row / showName true で開きスクショ(TC-PKT-010-row-name.png)。::before の computed display と .slot-icon の computed filter を取る
+      - 「パーク名」を外してスクショ(TC-PKT-010-row-noname.png)
+      - layout diamond / showName false で開きスクショ(TC-PKT-010-diamond-noname.png)
+      - 「ひし形の枠」を入れ直してスクショ(TC-PKT-010-frame-back.png)と ::before の computed display / background-image を取る
+    expected:
+      - no-frame 中は ::before の display が none で、紫のひし形・石の縁が出ない。画像は drop-shadow の濃い影(style.css:159)付き
+      - 名前あり / なし、横並び / ひし形のいずれでも同じ
+      - 枠を戻すと display が block に戻り、素材のひし形が TC-PKT-001 と同じ位置・大きさで出る
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-011
+    title: 背景 透過 / ピンク / グリーンで素材の四隅が背景を通し、中央が紫
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: background-color の残りで素材の透明部分(slot の四隅)が白 / 黒で塗られる。中央の不透明度 248/255 で背景色が透けて色味が変わる
+      business_impact: OBS で四角い影が出る、配色が崩れる
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / showIcon・showFrame・showName true / k.slots に任意の 4 件、locked 全 true'
+      - 画像ありモードが付いている
+    steps:
+      - bg transparent(ブラウザでは市松)で開きスクショ(TC-PKT-011-transparent.png)。data-i=0 の slot の左上角から内側 6px のピクセル色と、slot 中央のピクセル色を取る
+      - パネルの「ピンク」を押して同じ 2 点を取りスクショ(TC-PKT-011-pink.png)
+      - 「グリーン」を押して同じ 2 点を取りスクショ(TC-PKT-011-green.png)
+    expected:
+      - '四隅のピクセルは各背景の色そのもの(市松の灰色 / #ffd0f5 / #00ff00)。白・黒・紫ではない'
+      - 中央のピクセルは紫系で、3 つの背景でほぼ同じ(各成分の差が 10 以下。248/255 の透けは受容)
+      - 市松の格子が slot の正方形の範囲でも途切れず見える(四隅が透明)
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-012
+    title: 'OBS 実機: ブラウザソースで素材が出て透過が抜け、クロマキーで緑のフリンジが目立たない'
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/tool.json
+    risk:
+      failure_mode: OBS(CEF)が旧 CSS をキャッシュして素材が出ない。透過が抜けず四角い地が出る。グリーン+クロマキーで石の縁の半透明ピクセルに緑の縁取りが残る
+      business_impact: 本番の配信画面で崩れる
+    test_type: ui
+    automation_level: manual
+    automation_type: human_review
+    precondition:
+      - GitHub Pages に 0.2.6 が反映済み(またはローカル file:// を OBS のブラウザソースに指定)
+      - OBS のブラウザソースを 1920x1080 で追加し、「ソースのキャッシュを更新」を押してある
+      - 下にゲーム画面(キャプチャ)または明るい静止画のソースを置いてある
+    steps:
+      - 背景「透過」/ ひし形並び / 画像あり / 枠あり / 名前ありで待機 → 全部まわす → 停止まで見る
+      - 停止後のプレビューをスクショ(TC-PKT-012-obs-transparent.png)
+      - 背景「グリーン」にしてクロマキーフィルタを掛け、同じ場面をスクショ(TC-PKT-012-obs-green.png)
+      - 対話ウィンドウで枠をクリックして 1 枠だけまわす
+    expected:
+      - 素材のひし形が出て、ひし形の外(slot の四隅・枠の間)にゲーム画面が透けて見える。四角い地や白い枠は出ない
+      - 回転中も地は紫のまま。停止時のポップで素材が回らない
+      - クロマキーでも石の縁の周りに目立つ緑の縁取りがない(ぽこの目で許容範囲)
+      - 1 枠だけまわしても他の枠の素材が動かない
+    evidence:
+      required:
+        - screenshot
+        - movie
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: 透過の抜けは TC-PKT-011 のピクセル検査で先取りする。OBS 固有(CEF キャッシュ・クロマキー)の確認だけを実機に残す
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-013
+    title: 画像オフ(Pages 版で「パークの画像」オフ)で今までどおり白いひし形+中に名前+赤 / 青の線(回帰)
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: .icons 外の CSS(style.css:72-89)を触って、画像なしの白いひし形・インク色の枠線・k 赤 / s 青の色線・中の名前・停止ポップが崩れる
+      business_impact: zip 版と同じ見た目(画像なし)が壊れる
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: showIcon false / showFrame・showName true / bg pink / sound false / 4 枠とも null'
+      - icons/ はあるが「パークの画像」を外してあるので .slots に icons が付かない
+    steps:
+      - role k / layout row で開きスクショ(TC-PKT-013-k-row.png)。::before の computed style(background-color, border-width, box-shadow, transform)を取る
+      - '#spinBtn を押し、停止後にスクショ(TC-PKT-013-k-row-stopped.png)'
+      - role s / layout diamond で開きスクショ(TC-PKT-013-s-diamond.png)と同じ computed style
+    expected:
+      - '待機は白地(#ffffff)・インク色 7px の枠・rotate(45deg)・k は inset 6px #ff3b47 / s は inset 6px #6cb8ff の線。素材(perk-bg.png)は読まれない(background-image none)'
+      - 停止後は名前がひし形の中に出る。ポップ(slot-pop、rotate 45deg + scale)が今までどおり
+      - 変更前(0.2.5)のスクショと比べて差がない
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-014
+    title: zip 相当(icons/ も official/ も無い)で白いひし形+名前のまま、perk-bg.png への要求が出ない
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - scripts/package-tool.sh
+    risk:
+      failure_mode: CSS が .icons 外で official/perk-bg.png を参照して zip 版で 404 が出る / 白い枠が消える / 「パークの画像」が押せるようになる
+      business_impact: BOOTH 配布物の不良
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - scripts/package-tool.sh dbd-perks で作った zip を空のディレクトリに展開してある(または tools/dbd-perks を icons/ と official/ を除いてコピー)
+      - '状態: role k / layout row / bg pink / showIcon・showFrame・showName true / sound false / 4 枠とも null'
+    steps:
+      - 展開先の index.html を 1920x1080 で開き、requestfailed と console のエラーを記録する
+      - スクショ(TC-PKT-014-zip-idle.png)。::before の computed background-image と .slots のクラスを取る。#optIcon の disabled を取る
+      - '#spinBtn を押し停止後にスクショ(TC-PKT-014-zip-stopped.png)'
+    expected:
+      - .slots に icons が付かず、#optIcon は disabled
+      - 白いひし形(TC-PKT-013 と同じ)、停止後は名前がひし形の中
+      - requestfailed / console に perk-bg.png・icons/ 以外の失敗がない。perk-bg.png への要求自体が無い(probe の icons/<id>.png 1 件の失敗だけ)
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-015
+    title: zip の中身に official/ と icons/ が入っていない
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - scripts/package-tool.sh
+    risk:
+      failure_mode: 素材が zip に混入する(zip 非同梱の決定に反する)。将来 assets/ に移されると自動で混入する
+      business_impact: 配布物に素材が入る(利用条件の範囲外になりうる)
+    test_type: batch
+    automation_level: semi_auto
+    automation_type: log_check
+    precondition:
+      - tool.json の version が 0.2.6
+    steps:
+      - scripts/package-tool.sh dbd-perks を実行する
+      - unzip -l dist/dbd-perks-v0.2.6.zip の一覧を記録する(TC-PKT-015-unzip.txt)
+    expected:
+      - 一覧に official/ と icons/ のエントリが無い(perk-bg.png が無い)
+      - index.html / app.js / perks-data.js / style.css / CREDITS.md / CHANGELOG.md / 使い方.txt / 利用規約.txt が入っている
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-016
+    title: 素材が git 管理に入り、CSS の参照パスがファイル名と大小文字まで一致する
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/official/perk-bg.png
+        - .gitignore
+    risk:
+      failure_mode: ファイルの add 忘れ・.gitignore・パスの大小文字違いで GitHub Pages(大小文字を区別)上 404 になり、地が消えて白い線画だけになる
+      business_impact: Pages 版で枠が消える
+    test_type: batch
+    automation_level: semi_auto
+    automation_type: log_check
+    precondition:
+      - 実装ブランチがコミット済み(または staged)
+    steps:
+      - git ls-files tools/dbd-perks/official を記録する
+      - grep -n "perk-bg" tools/dbd-perks/style.css で url() の文字列を取り、そのパスを tools/dbd-perks からの相対で ls -l する
+      - git check-ignore -v tools/dbd-perks/official/perk-bg.png を実行する
+    expected:
+      - git ls-files に tools/dbd-perks/official/perk-bg.png が出る
+      - url() のパスは official/perk-bg.png で、ls -l が同じ名前のファイルを返す(大小文字一致)。http(s):// や / 始まりではない
+      - check-ignore は無視対象なし(終了コード 1)
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-017
+    title: CREDITS.md に素材の出典・利用条件・zip 非同梱が書かれている
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/CREDITS.md
+    risk:
+      failure_mode: 出典(DbD 公式の公認クリエイター向け Free to Use 素材)・利用条件・Web 版のみ(zip 非同梱)の記載漏れ。Behaviour Interactive の著作物である旨の欠落
+      business_impact: 権利表記の不備
+    test_type: ui
+    automation_level: manual
+    automation_type: human_review
+    precondition:
+      - CREDITS.md を更新済み
+    steps:
+      - tools/dbd-perks/CREDITS.md を読む
+      - 冒頭の「zip 版に同梱している素材はありません」と矛盾しないか見る
+    expected:
+      - 「パークの背景(Web 版だけ。official/perk-bg.png)」の行があり、出典(公式の公認クリエイター向けに Free to Use で提供された素材)、著作物の帰属(Behaviour Interactive Inc.)、zip には入れないこと、が書かれている
+      - 利用条件の原本の所在(または確認日と確認者)が書かれている。secret・個人情報はない
+      - owner が内容を承認している
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: true
+      review_reason:
+        - business_risk_acceptance
+      blocking_release: false
+    manual_reduction_plan: 必須語(official/perk-bg.png、Free to Use、zip)の grep を semi_auto に出し、文意の確認だけ人に残す
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-018
+    title: 版が 0.2.6 に上がり CHANGELOG に項がある
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/tool.json
+        - tools/dbd-perks/app.js
+        - tools/dbd-perks/CHANGELOG.md
+    risk:
+      failure_mode: 版上げ忘れで Pages の表示・zip 名・git tag(dbd-perks-v0.2.6)がずれる。CHANGELOG に変更が残らない
+      business_impact: 運用(版の追跡)
+    test_type: batch
+    automation_level: semi_auto
+    automation_type: log_check
+    precondition:
+      - 実装完了
+    steps:
+      - python3 -c 'import json; print(json.load(open("tools/dbd-perks/tool.json"))["version"])' を記録する
+      - grep -n "^## 0.2.6" tools/dbd-perks/CHANGELOG.md を記録する
+      - index.html / app.js に版を表示している箇所があれば grep する
+    expected:
+      - version が 0.2.6
+      - app.js の VERSION(画面右下の表示)も 0.2.6(tool.json と揃っている)
+      - CHANGELOG の先頭に「## 0.2.6 (2026-11-xx)」があり、公式素材の背景(Web 版だけ)・色線を消したこと・zip は変わらないことが書かれている
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-019
+    title: 'セキュリティ: 外部 URL の読込を足していない・PNG に不要なメタデータがない'
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+        - tools/dbd-perks/index.html
+        - tools/dbd-perks/official/perk-bg.png
+    risk:
+      failure_mode: 素材を外部 URL から読む・inline script や入力経路を足す(file:// / OBS の前提と conventions.md に反する)。PNG の tEXt / iTXt に個人情報や作業パスが残る
+      business_impact: 外部依存・情報露出
+    test_type: batch
+    automation_level: semi_auto
+    automation_type: log_check
+    precondition:
+      - 実装完了(コード確定後)
+    steps:
+      - git diff main...HEAD -- tools/dbd-perks を取り、追加行に https?:// / url( / <script / fetch( / innerHTML が含まれるか grep する
+      - python3 -I で perk-bg.png のチャンク名一覧を出す
+      - 1920x1080 で開き、page.on("request") で file:// 以外の要求が無いことを記録する
+    expected:
+      - 追加行の url( は official/perk-bg.png の相対パスだけ。https?:// の追加は CREDITS.md の出典リンク以外に無い。script / fetch / innerHTML の追加なし
+      - PNG のチャンクは IHDR / iCCP / pHYs / IDAT / IEND のみ(tEXt / iTXt / zTXt / eXIf なし)
+      - ページの要求はすべて file://(外部要求ゼロ)
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-020
+    title: 要件 docs の「枠は自作 / 公式の枠画像は使わない / キラー赤・サバイバー青」を owner 決定に合わせて更新してある
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - docs/requirements/dbd-perks.md
+        - docs/development/dev-intent/dbd-perks-official-perk-bg.md
+    risk:
+      failure_mode: docs/requirements/dbd-perks.md:19,33,34 が owner 決定(2026-11-03、公式素材を地に使う・色線を消す)と矛盾したまま残り、棚卸や次の実装で旧方針に戻される
+      business_impact: docs 正本のずれ
+    test_type: ui
+    automation_level: manual
+    automation_type: human_review
+    precondition:
+      - 実装 PR に docs の更新が含まれている
+    steps:
+      - docs/requirements/dbd-perks.md の「枠」に関する記述(:19, :33, :34、「枠の中身」:39)を読む
+      - docs/development/dev-intent/dbd-perks-official-perk-bg.md に決定(日付・誰が・何を・なぜ)が残っているか見る
+    expected:
+      - 画像ありのときは公式素材「パークの背景」を地に使う(Web 版だけ)、色線は出さない、画像なしは自作の白いひし形+色線のまま、と書き換わっている
+      - dev-intent に 2026-11-03 の決定(色線を消す・zip 非同梱・patch)が要旨で残り、DRBFM 行 / test case への反映先が書いてある
+    evidence:
+      required:
+        - log
+      path: null
+    review:
+      review_required: true
+      review_reason:
+        - design_philosophy_deviation
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-021
+    title: 画像のないパーク(icon 無し)が画像ありモードに出たとき、素材のひし形が空で名前は外に出る
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/app.js
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: 空のひし形だけが出て違和感がある(今までは紫のグラデが空で出ていたので挙動自体は同じ)
+      business_impact: 軽微
+    test_type: ui
+    automation_level: not_tested
+    automation_type: visual
+    precondition:
+      - perks-data.js に icon の無いパークがある
+    steps:
+      - そのパークを固定表示し、横並びでスクショを撮る
+    expected:
+      - 素材のひし形が空のまま出て、名前はひし形の外に出る。エラーは出ない
+    evidence:
+      required:
+        - screenshot
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: 週次更新 PR で「画像が見つからないパーク」が出たときに本項を semi_auto(playwright の route で perks-data.js の icon を空にする)に格上げする
+    skip_reason: 2026-11-03 時点で 321 / 321 に画像があり到達しない。再現に perks-data.js の改変が要る
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-022
+    title: ブラウザ縮小表示(fitStage 1280x720)で素材がにじまず境界に継ぎ目がない
+    status: active
+    source:
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+        - tools/dbd-perks/app.js
+    risk:
+      failure_mode: .stage の transform scale で 256px 素材を 300px に拡大したものがさらに縮小され、縁がにじむ・ひし形の境界に線が出る
+      business_impact: 軽微(ブラウザでの確認時)
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / bg pink / showIcon・showFrame・showName true / k.slots に任意の 4 件、locked 全 true'
+    steps:
+      - viewport 1280x720 で開き .slots.icons を待つ
+      - 全画面スクショ(TC-PKT-022-1280.png)と data-i=0 の slot の 2 倍拡大クロップを撮る
+    expected:
+      - 素材のひし形が 4 枠とも同じ大きさで中央に出る。縁の周りに白や黒の線が出ない。パーク画像と名前の位置関係は 1920x1080 と同じ
+    evidence:
+      required:
+        - screenshot
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-023
+    title: '1 枠だけまわす: 固定枠と他の枠の素材が動かず、ポップは止まった枠だけ'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/app.js
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: 停止ポップ(回転なし keyframe)が他の枠に波及する。固定枠の ::before が spinning の地色に変わる
+      business_impact: 軽微(演出)
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / bg transparent / showIcon・showFrame・showName true / sound false / k.slots に任意の 4 件、locked は [true, false, false, false]'
+      - 画像ありモードが付いている
+    steps:
+      - .slot[data-i="2"] をクリックして 1 枠だけまわす
+      - 300ms 後に全画面スクショ(TC-PKT-023-one-spinning.png)と 4 枠の ::before の computed background-image / animation-name を取る
+      - data-i=2 に stopped が付いた直後に同じものを取りスクショ(TC-PKT-023-one-stopped.png)
+    expected:
+      - 回転中・停止直後とも、data-i=0(固定)/ 1 / 3 の ::before は素材のまま animation-name none。data-i=2 だけ回転中にパーク画像が切り替わり、停止直後に回転なしのポップが走る
+      - 固定枠のパーク画像と名前が変わらない
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+
+  - test_case_id: TC-PKT-024
+    title: 'グリーン背景で石の縁が緑にならない(素材を 3 枚重ね)'
+    status: active
+    source:
+      requirement: docs/requirements/dbd-perks.md
+      drbfm: docs/development/drbfm/20261103-dbd-perks-official-perk-bg-official-perk-background.md
+      issue: dbd-perks-official-perk-bg
+      code:
+        - tools/dbd-perks/style.css
+    risk:
+      failure_mode: 素材の石の縁が半透明(8 割前後)のため、グリーンの地で暗い緑になり、クロマキーで縁が欠ける / 緑が残る
+      business_impact: 中(透過できない配信ソフトでグリーンを使う人だけ)
+    test_type: ui
+    automation_level: semi_auto
+    automation_type: visual
+    precondition:
+      - '状態: role k / layout row / showIcon・showFrame・showName true(Pages 版相当: icons/ と official/ がある)'
+    steps:
+      - 全部まわして止まったあと、背景をグリーン / ピンク / 透過に切り替えて、それぞれ 4 枠の ::before の background-image に perk-bg.png が何回出るかを取り、全画面スクショを撮る
+      - グリーンのまま全部まわし、300ms 後(回転中)の重ね枚数を取る
+      - グリーンのスクショで、枠 0 の中心からの L1 距離 125〜148px の帯について、緑が赤・青より 20 以上大きいピクセルの割合と平均色を測る
+    expected:
+      - グリーンは待機・回転中とも 3 枚、ピンク・透過は 1 枚(グリーン以外の見た目は変わらない)
+      - グリーンの縁の帯で緑が勝つピクセルが 1% 未満。縁(L1 135〜148px)の平均色がほぼ黒(各成分 10 以下)
+    evidence:
+      required:
+        - screenshot
+        - log
+      path: null
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
