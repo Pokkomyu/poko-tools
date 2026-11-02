@@ -136,9 +136,29 @@ body.green { background: #00ff00; }  /* クロマキー用 */
   pointer-events: none;
   filter: drop-shadow(0 2px 0 rgba(59, 43, 69, .35));
 }
-/* パークの画像は白い線画なので、ゲームと同じく濃い地に置く */
-.icons .slot::before { background: radial-gradient(circle, #5a4370 0%, #2c2138 75%); }
-.icons .slot.spinning::before { background: radial-gradient(circle, #5a4370 0%, #2c2138 75%); }
+/* パークの画像は白い線画なので、ゲームと同じパークの背景(公式素材 official/perk-bg.png。Pages 版だけ)に置く。
+   素材に縁があるので枠線・役割の色・回転はなし。素材のひし形は画像の 96%(6〜252px / 256px)なので、対角線が --slot になるよう少し大きく敷く */
+.icons .slot::before,
+.icons .slot.spinning::before {
+  left: -2%;
+  top: -2%;
+  width: 104%;
+  height: 104%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: url("official/perk-bg.png") center / contain no-repeat;
+  transform: none;
+}
+/* 素材の石の縁は半透明(8 割ほど)で、グリーンの地だと暗い緑になってクロマキーで欠ける。グリーンのときだけ 3 枚重ねて縁を濃くする */
+body.green .icons .slot::before {
+  background:
+    url("official/perk-bg.png") center / contain no-repeat,
+    url("official/perk-bg.png") center / contain no-repeat,
+    url("official/perk-bg.png") center / contain no-repeat;
+}
+.icons .slot.stopped::before { animation-name: slot-pop-flat; }
+@keyframes slot-pop-flat { 0% { transform: scale(.86); } 100% { transform: scale(1); } }
 .icons .slot-in { width: 300px; gap: 2px; }
 .icons .slot-name.empty { display: none; }
 /* 横並び: 名前はひし形の下 */
