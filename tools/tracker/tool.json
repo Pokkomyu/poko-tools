@@ -1,7 +1,8 @@
 {
   "name": "tracker",
   "displayName": "本日のチャレンジ",
-  "version": "0.3.0",
+  "version": "0.3.1",
+  "fonts": ["keifont"],
   "obs": {
     "width": 720,
     "height": 900,

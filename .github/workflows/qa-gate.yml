@@ -18,6 +18,8 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fonts check (shared/fonts ledger, per-tool copies, no external URL)
+        run: python3 scripts/fonts.py check
       - name: Run change gate (DRBFM / dev-intent / evidence / test-case master / no test removal)
         run: |
           chmod +x scripts/qa-gate.sh

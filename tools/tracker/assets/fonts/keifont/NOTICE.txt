@@ -1,0 +1,12 @@
+けいふぉんと!(keifont.ttf)
+
+配布元: Do-Font(http://font.sumomo.ne.jp/font_1.html)
+ライセンス: Apache License 2.0(LICENSE-Apache-2.0.txt)
+フォントファイルは配布元の k-font.zip のものを改変せずに同梱している。
+
+[Source Han Sans] Copyright(c) 2014 Adobe Systems Incorporated. All Rights Reserved.
+[M+ OUTLINE FONTS] Copyright(c) 2014 M+ FONTS PROJECT(LICENSE-M+FONTS.txt)
+[Genshin] Copyright(c) 2014 Jikasei Font Kobo by MM.
+[KANAMOJI] Copyright(c) 2014 Do-Font
+
+配布元の説明(ご利用にあたって・変更点・免責)は README-keifont.txt。

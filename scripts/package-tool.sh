@@ -6,6 +6,8 @@ set -euo pipefail
 name="${1:?usage: $0 <tool-name>}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
+python3 "$root/scripts/fonts.py" check "$name"
+
 python3 - "$root" "$name" <<'PY'
 import json, pathlib, sys, zipfile
 
