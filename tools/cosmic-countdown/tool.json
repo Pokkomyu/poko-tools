@@ -1,0 +1,10 @@
+{
+  "name": "cosmic-countdown",
+  "displayName": "コズミックカウントダウン",
+  "version": "0.1.0",
+  "obs": {
+    "width": 2320,
+    "height": 1080,
+    "transparent": true
+  }
+}
