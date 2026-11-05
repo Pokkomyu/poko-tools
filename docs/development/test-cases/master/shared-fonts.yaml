@@ -1,0 +1,502 @@
+# test-case master: フォント共有置き場(shared/fonts, scripts/fonts.py)
+#
+# スキーマ: SQA schemas/test-case-master.schema.yaml
+# semi_auto = シェル(fonts.py / package-tool.sh)とヘッドレス Chromium(playwright, file://)で実行し、
+# 結果は docs/development/evidence/shared-fonts/test-results.md に残す。
+meta:
+  repo: poko-tools
+  feature: shared-fonts
+  ticket_id: shared-fonts
+  updated: 2026-11-05
+
+test_cases:
+  - test_case_id: TC-FNT-001
+    title: '台帳: SHA256SUMS が shared/fonts の全ファイルと一致する'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: '台帳: SHA256SUMS が shared/fonts の全ファイルと一致するが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'python3 scripts/fonts.py check; (cd shared/fonts && sha256sum -c SHA256SUMS)'
+    expected:
+      - 'check OK、NG 0 件'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-002
+    title: 'manifest: 載っている全ファイルが存在し、ライセンス原文が各フォルダにある'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'manifest: 載っている全ファイルが存在し、ライセンス原文が各フォルダにあるが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'fonts.py check'
+    expected:
+      - 'OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-003
+    title: 'assets/fonts の直下フォルダ集合が tool.json fonts と一致(空フォルダ x を足すと NG)'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'assets/fonts の直下フォルダ集合が tool.json fonts と一致(空フォルダ x を足すと NG)が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'tools/roulette/assets/fonts/x を作って check'
+    expected:
+      - 'NG・rc=1、削除後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-004
+    title: 'ツールのコピーが shared とバイト一致'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'ツールのコピーが shared とバイト一致が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'fonts.py check / sync'
+    expected:
+      - 'OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-005
+    title: 'OFL の with Reserved Font Name の有無が manifest rfn と一致(rfn を X にすると NG)'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'OFL の with Reserved Font Name の有無が manifest rfn と一致(rfn を X にすると NG)が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'manifest を一時改変して check'
+    expected:
+      - 'NG、復元後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-006
+    title: '@font-face の family/weight が manifest と一致(family 変更・weight 700 で NG)'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: '@font-face の family/weight が manifest と一致(family 変更・weight 700 で NG)が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'red.html を一時改変'
+    expected:
+      - 'NG、復元後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-007
+    title: 'html/css に shared/ 参照があると NG'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'html/css に shared/ 参照があると NGが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'red.html に ../../shared/fonts を入れる'
+    expected:
+      - 'NG、復元後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-008
+    title: 'html/css/js に http(s):// があると NG(コメントは除く)'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'html/css/js に http(s):// があると NG(コメントは除く)が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'red.html に外部 URL を入れる'
+    expected:
+      - 'NG、復元後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-009
+    title: 'tracker zip に assets/fonts/keifont の 5 ファイルが入り、他の fonts は入らない'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'tracker zip に assets/fonts/keifont の 5 ファイルが入り、他の fonts は入らないが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'package-tool.sh tracker; unzip -l'
+    expected:
+      - '16 ファイル、zip 約 2.8MB'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-010
+    title: 'tracker の旧パス assets/keifont が 0 件、新パスを 6 色が参照'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'tracker の旧パス assets/keifont が 0 件、新パスを 6 色が参照が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'grep'
+    expected:
+      - '旧 0 件、新 6 ファイル'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-011
+    title: 'roulette / deco-poko / dbd-perks の zip 一覧が変更前後で同一'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'roulette / deco-poko / dbd-perks の zip 一覧が変更前後で同一が成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'origin/main と作業ツリーの unzip -l を比較'
+    expected:
+      - '同一'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-012
+    title: 'release-free.sh / release-edition.sh が package-tool.sh を呼ぶため check が自動で走る'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'release-free.sh / release-edition.sh が package-tool.sh を呼ぶため check が自動で走るが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'grep'
+    expected:
+      - '57 行・77 行で呼出'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-013
+    title: 'Chromium で tracker 6 色とも keifont が loaded、document.fonts.check が true'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'Chromium で tracker 6 色とも keifont が loaded、document.fonts.check が trueが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - 'Playwright(file://)'
+    expected:
+      - '6 色すべて loaded'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []
+  - test_case_id: TC-FNT-014
+    title: 'コピーまたは正本を改ざんすると check と package-tool.sh が失敗する'
+    status: active
+    source:
+      requirement: design/02-fonts-review.md
+      drbfm: docs/development/drbfm/20261105-shared-fonts-shared-font-store.md
+      issue: shared-fonts
+      code:
+        - scripts/fonts.py
+        - shared/fonts/manifest.json
+    risk:
+      failure_mode: 'コピーまたは正本を改ざんすると check と package-tool.sh が失敗するが成り立たず、配布 zip でフォントが読めない、または外部依存・権利表記の欠落が混ざる'
+      business_impact: 配信の表示崩れ・ライセンス違反の恐れ
+    test_type: functional
+    automation_level: semi_auto
+    automation_type: script
+    precondition:
+      - feat/shared-fonts の作業ツリー
+    steps:
+      - '1 バイト書換'
+    expected:
+      - 'rc=1、復元後 OK'
+    evidence:
+      required:
+        - log
+      path: docs/development/evidence/shared-fonts/test-results.md
+    review:
+      review_required: false
+      review_reason: []
+      blocking_release: false
+    manual_reduction_plan: null
+    skip_reason: null
+    last_reviewed: null
+    intent_ids: []
+    supersedes: []

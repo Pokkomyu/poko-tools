@@ -1,0 +1,3 @@
+# フォントのライセンス原文は配布元のまま持つ(CRLF・行末空白も変えない)。sha256 と照合するので改行変換もしない
+shared/fonts/** -text -whitespace
+tools/*/assets/fonts/** -text -whitespace

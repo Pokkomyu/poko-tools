@@ -10,7 +10,7 @@
 |---|---|
 | `<script type="module">` / `import` | 通常の `<script src="app.js">` |
 | `fetch('data.json')` | JS 内に定数で持つ |
-| CDN・Google Fonts | 同梱する(ライセンス確認必須)かシステムフォント |
+| CDN・Google Fonts | 同梱する(ライセンス確認必須)かシステムフォント。同梱するフォントは `shared/fonts/<id>/` を正本にし、使うツールの `assets/fonts/<id>/` にコピーして `assets/fonts/<id>/…` で読む(`scripts/fonts.py`。`../../shared/` は zip で壊れる) |
 | BroadcastChannel で別ページと同期 | 1ページ内で完結させる |
 
 ## 2. OBS 前提のレイアウト

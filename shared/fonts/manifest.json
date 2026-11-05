@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "fonts": {
+    "dela-gothic-one": {
+      "family": "Dela Gothic One",
+      "weight": 400,
+      "style": "normal",
+      "files": [
+        "DelaGothicOne-Regular.ttf"
+      ],
+      "license": {
+        "type": "OFL-1.1",
+        "files": [
+          "OFL.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Copyright 2020 The Dela Gothic Project Authors (https://github.com/syakuzen/DelaGothic)",
+      "source": {
+        "url": "https://github.com/google/fonts/tree/bbda7253fc363238b05d97515ca71f8ae49c4fa9/ofl/delagothicone",
+        "fetched": "2026-11-05"
+      }
+    },
+    "mochiy-pop-one": {
+      "family": "Mochiy Pop One",
+      "weight": 400,
+      "style": "normal",
+      "files": [
+        "MochiyPopOne-Regular.ttf"
+      ],
+      "license": {
+        "type": "OFL-1.1",
+        "files": [
+          "OFL.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Copyright 2020 The Mochiypop Project Authors (https://github.com/fontdasu/Mochiypop)",
+      "source": {
+        "url": "https://github.com/google/fonts/tree/bbda7253fc363238b05d97515ca71f8ae49c4fa9/ofl/mochiypopone",
+        "fetched": "2026-11-05"
+      }
+    },
+    "dotgothic16": {
+      "family": "DotGothic16",
+      "weight": 400,
+      "style": "normal",
+      "files": [
+        "DotGothic16-Regular.ttf"
+      ],
+      "license": {
+        "type": "OFL-1.1",
+        "files": [
+          "OFL.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Copyright 2020 The DotGothic16 Project Authors (https://github.com/fontworks-fonts/DotGothic16)",
+      "source": {
+        "url": "https://github.com/google/fonts/tree/bbda7253fc363238b05d97515ca71f8ae49c4fa9/ofl/dotgothic16",
+        "fetched": "2026-11-05"
+      }
+    },
+    "reggae-one": {
+      "family": "Reggae One",
+      "weight": 400,
+      "style": "normal",
+      "files": [
+        "ReggaeOne-Regular.ttf"
+      ],
+      "license": {
+        "type": "OFL-1.1",
+        "files": [
+          "OFL.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Copyright 2020 The Reggae Project Authors (https://github.com/fontworks-fonts/Reggae)",
+      "source": {
+        "url": "https://github.com/google/fonts/tree/bbda7253fc363238b05d97515ca71f8ae49c4fa9/ofl/reggaeone",
+        "fetched": "2026-11-05"
+      }
+    },
+    "kaisei-decol": {
+      "family": "Kaisei Decol",
+      "weight": 700,
+      "style": "normal",
+      "files": [
+        "KaiseiDecol-Bold.ttf"
+      ],
+      "license": {
+        "type": "OFL-1.1",
+        "files": [
+          "OFL.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Copyright 2020 The Kaisei Project Authors (https://github.com/Font-Kai/Kaisei)",
+      "source": {
+        "url": "https://github.com/google/fonts/tree/bbda7253fc363238b05d97515ca71f8ae49c4fa9/ofl/kaiseidecol",
+        "fetched": "2026-11-05"
+      }
+    },
+    "keifont": {
+      "family": "けいふぉんと",
+      "weight": 400,
+      "style": "normal",
+      "files": [
+        "keifont.ttf"
+      ],
+      "license": {
+        "type": "Apache-2.0",
+        "files": [
+          "LICENSE-Apache-2.0.txt",
+          "LICENSE-M+FONTS.txt",
+          "NOTICE.txt",
+          "README-keifont.txt"
+        ],
+        "rfn": null
+      },
+      "copyright": "Do-Font(けいふぉんと!)。Source Han Sans(Adobe)・M+ OUTLINE FONTS・Genshin・KANAMOJI を含む。詳細は NOTICE.txt",
+      "source": {
+        "url": "http://font.sumomo.ne.jp/font_1.html",
+        "fetched": "2026-10-04"
+      },
+      "notes": "配布元 k-font.zip のものを改変せずに同梱"
+    }
+  }
+}
